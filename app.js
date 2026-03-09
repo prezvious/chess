@@ -43,6 +43,10 @@ const ENGINE_CALIBRATION_GAMES = 5;
 const ENGINE_ANALYSIS_DEPTH = 12;
 const LIVE_EVAL_DEPTH = 10;
 const STOCKFISH_WORKER_PATH = './stockfish-worker.js?v=20260310g';
+const THEME_MODE_KEY = 'cloud-chess-theme-mode-v1';
+const AUTO_FLIP_HUMAN_KEY = 'cloud-chess-auto-flip-human-v1';
+const ACTIVE_GAME_KEY_PREFIX = 'cloud-chess-active-game-v1:';
+const SNAPSHOT_KEY_PREFIX = 'cloud-chess-board-snapshot-v1:';
 
 const statusCard = document.getElementById('status-card');
 const statusText = document.getElementById('status-text');
@@ -62,6 +66,8 @@ const pieceStyleEl = document.getElementById('piece-style');
 const boardStyleEl = document.getElementById('board-style');
 const soundEnabledEl = document.getElementById('sound-enabled');
 const autoSyncEnabledEl = document.getElementById('auto-sync-enabled');
+const themeModeEl = document.getElementById('theme-mode');
+const autoFlipHumanEl = document.getElementById('auto-flip-human');
 
 const cloudStatusEl = document.getElementById('cloud-status');
 const cloudGameIdEl = document.getElementById('cloud-game-id');
@@ -87,6 +93,7 @@ const evalTrackEl = document.getElementById('eval-track');
 const evalFillBlackEl = document.getElementById('eval-fill-black');
 const evalFillWhiteEl = document.getElementById('eval-fill-white');
 const evalReadoutEl = document.getElementById('eval-readout');
+const evalColumnEl = document.querySelector('.eval-column');
 
 const PROMOTION_ROLES = ['queen', 'rook', 'bishop', 'knight'];
 const PROMOTION_TEXT = {
@@ -129,6 +136,8 @@ const state = {
   boardStyle: 'brown',
   soundEnabled: true,
   autoSyncEnabled: true,
+  themeMode: 'auto',
+  autoFlipHuman: false,
   supabase: null,
   player: null,
   gameId: null,
@@ -136,6 +145,7 @@ const state = {
   saveTimer: null,
   settingsTimer: null,
   analysisTimer: null,
+  supportsExtendedSettings: true,
   syncingRemote: false,
   syncingSince: 0,
   sessionId: crypto.randomUUID(),
@@ -184,12 +194,14 @@ function capitalize(value) {
 }
 
 function setCloudStatus(message, kind = '') {
+  if (!cloudStatusEl) return;
   cloudStatusEl.textContent = message;
   cloudStatusEl.className = 'cloud-status';
   if (kind) cloudStatusEl.classList.add(kind);
 }
 
 function setSyncPill(message, kind = '') {
+  if (!syncText) return;
   syncText.textContent = message;
   syncText.className = 'sync-pill';
   if (kind) syncText.classList.add(kind);
@@ -199,10 +211,100 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function activeGameStorageKey() {
+  const playerId = state.player?.playerId || 'anonymous';
+  return ACTIVE_GAME_KEY_PREFIX + playerId;
+}
+
+function boardSnapshotStorageKey() {
+  const playerId = state.player?.playerId || 'anonymous';
+  return SNAPSHOT_KEY_PREFIX + playerId;
+}
+
+function normalizeThemeMode(value) {
+  return value === 'light' || value === 'dark' || value === 'auto' ? value : 'auto';
+}
+
+function resolveThemeMode(mode) {
+  if (mode === 'light') return 'light';
+  if (mode === 'dark') return 'dark';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function applyDocumentTheme() {
+  const resolved = resolveThemeMode(state.themeMode);
+  document.documentElement.dataset.theme = resolved;
+  document.documentElement.dataset.themeMode = state.themeMode;
+}
+
+function readStoredThemeMode() {
+  try {
+    const raw = localStorage.getItem(THEME_MODE_KEY);
+    if (!raw) return null;
+    return normalizeThemeMode(raw);
+  } catch {
+    return null;
+  }
+}
+
+function readStoredAutoFlipHuman() {
+  try {
+    const raw = localStorage.getItem(AUTO_FLIP_HUMAN_KEY);
+    if (raw == null) return null;
+    return raw === '1';
+  } catch {
+    return null;
+  }
+}
+
+function persistLocalPreferences() {
+  try {
+    localStorage.setItem(THEME_MODE_KEY, state.themeMode);
+    localStorage.setItem(AUTO_FLIP_HUMAN_KEY, state.autoFlipHuman ? '1' : '0');
+  } catch {
+    // no-op
+  }
+}
+
+function loadLocalActiveGameId() {
+  try {
+    const id = (localStorage.getItem(activeGameStorageKey()) || '').trim();
+    state.gameId = id || null;
+  } catch {
+    state.gameId = null;
+  }
+}
+
+function persistLocalBoardSnapshot() {
+  if (!state.position || !state.player) return;
+
+  try {
+    const info = gameStatus();
+    const payload = {
+      fen: currentFen(),
+      turn: state.position.turn,
+      status: mapStatusCode(info.code),
+      result: info.result,
+      lastMoveUci: state.lastMoveUci,
+      moves: state.moves,
+      capturedByWhite: state.capturedByWhite,
+      capturedByBlack: state.capturedByBlack,
+      sessionId: state.sessionId,
+    };
+
+    localStorage.setItem(boardSnapshotStorageKey(), JSON.stringify(payload));
+
+    if (state.gameId) {
+      localStorage.setItem(activeGameStorageKey(), state.gameId);
+    }
+  } catch {
+    // no-op
+  }
+}
+
 function engineHumanColor() {
   return state.engine.side === 'white' ? 'black' : 'white';
 }
-
 function engineStorageKey() {
   const playerId = state.player?.playerId || 'anonymous';
   return 'cloud-chess-engine-settings-v1:' + playerId;
@@ -547,6 +649,20 @@ function scoreToBlackBarPercent(score) {
 function renderLiveEvaluationBar() {
   if (!evalTrackEl || !evalFillBlackEl || !evalFillWhiteEl || !evalReadoutEl) return;
 
+  if (!state.position || !isMatchFinished()) {
+    if (evalColumnEl) evalColumnEl.classList.add('hidden');
+    state.liveEval.loading = false;
+    evalTrackEl.classList.remove('loading');
+    evalFillBlackEl.style.height = '50%';
+    evalFillWhiteEl.style.height = '50%';
+    evalReadoutEl.textContent = '--';
+    evalReadoutEl.classList.remove('on-dark');
+    evalReadoutEl.classList.remove('on-light');
+    return;
+  }
+
+  if (evalColumnEl) evalColumnEl.classList.remove('hidden');
+
   const blackPercent = clamp(state.liveEval.blackPercent, 0, 100);
   const whitePercent = 100 - blackPercent;
 
@@ -564,7 +680,6 @@ function renderLiveEvaluationBar() {
     evalTrackEl.classList.remove('loading');
   }
 }
-
 function classifyMove(cpl, playedUci, bestUci) {
   const normalize = text => (text || '').trim().toLowerCase();
   if (bestUci && normalize(playedUci) === normalize(bestUci)) return 'best';
@@ -678,8 +793,12 @@ function renderAnalysis() {
 }
 
 function applyTheme() {
-  boardShell.dataset.pieceStyle = state.pieceStyle;
-  boardShell.dataset.boardStyle = state.boardStyle;
+  applyDocumentTheme();
+
+  if (boardShell) {
+    boardShell.dataset.pieceStyle = state.pieceStyle;
+    boardShell.dataset.boardStyle = state.boardStyle;
+  }
 
   if (state.ground) {
     state.ground.set({
@@ -687,7 +806,6 @@ function applyTheme() {
     });
   }
 }
-
 function selfHealLocks() {
   const now = Date.now();
 
@@ -709,11 +827,21 @@ function selfHealLocks() {
 }
 
 function refreshBoard() {
+  if (!state.ground || !state.position) return;
+
   selfHealLocks();
+
+  if (state.engine.enabled) {
+    state.orientation = engineHumanColor();
+  } else if (state.autoFlipHuman) {
+    state.orientation = state.position.turn;
+  }
+
   const info = gameStatus();
   const isActive = info.code === 'ongoing' || info.code === 'check';
   const blockedByEngine = state.engine.enabled && (state.position.turn === state.engine.side || state.engine.busy);
   const canMove = isActive && !state.awaitingPromotion && !blockedByEngine && !state.cleaningArena;
+
   state.ground.set({
     fen: currentFen(),
     orientation: state.orientation,
@@ -730,6 +858,7 @@ function refreshBoard() {
     },
   });
 }
+
 function refreshUi() {
   refreshBoard();
   renderStatus();
@@ -739,8 +868,8 @@ function refreshUi() {
   renderAnalysis();
   renderLiveEvaluationBar();
   queueLiveEvaluation();
+  persistLocalBoardSnapshot();
 }
-
 function isPromotionNeeded(move, piece) {
   if (!piece || piece.role !== 'pawn' || !('to' in move)) return false;
   const rank = squareRank(move.to);
@@ -1195,6 +1324,20 @@ function requestPositionAnalysis(fenText, depth) {
 function queueLiveEvaluation(delayMs = 160) {
   if (!state.position) return;
 
+  if (!isMatchFinished()) {
+    state.liveEval.pendingFen = '';
+    state.liveEval.lastFen = '';
+    state.liveEval.loading = false;
+
+    if (state.liveEval.timer) {
+      clearTimeout(state.liveEval.timer);
+      state.liveEval.timer = null;
+    }
+
+    renderLiveEvaluationBar();
+    return;
+  }
+
   const fenText = currentFen();
   state.liveEval.pendingFen = fenText;
 
@@ -1231,6 +1374,7 @@ function queueLiveEvaluation(delayMs = 160) {
 
 async function updateLiveEvaluation(fenText) {
   if (!state.position) return;
+  if (!isMatchFinished()) return;
   if (state.analysis.running || state.cleaningArena) return;
   if (fenText !== state.liveEval.pendingFen) return;
 
@@ -1276,14 +1420,12 @@ async function updateLiveEvaluation(fenText) {
   } catch (error) {
     if (token !== state.liveEval.token) return;
 
-    const message = String(error && error.message ? error.message : error || '');
-    const lowerMessage = message.toLowerCase();
-    if (lowerMessage.includes('overlap')) {
+    if (error?.message && /position analysis timeout/i.test(error.message)) {
       queueLiveEvaluation(180);
       return;
     }
 
-    if (lowerMessage.includes('reset') || lowerMessage.includes('cancel')) {
+    if (error?.message && /worker restarting/i.test(error.message)) {
       queueLiveEvaluation(120);
       return;
     }
@@ -1294,7 +1436,6 @@ async function updateLiveEvaluation(fenText) {
     renderLiveEvaluationBar();
   }
 }
-
 async function analyzeAllMoves() {
   if (!state.moves.length) {
     resetAnalysisState(true);
@@ -1720,7 +1861,7 @@ function gamePayload(title = 'Cloud Chess Game') {
 async function saveUserSettings() {
   if (!state.supabase || !state.player) return;
 
-  const payload = {
+  const basePayload = {
     profile_id: state.player.playerId,
     owner_token: state.player.playerToken,
     piece_style: state.pieceStyle,
@@ -1729,15 +1870,36 @@ async function saveUserSettings() {
     auto_sync_enabled: state.autoSyncEnabled,
   };
 
-  const { error } = await state.supabase
-    .from('user_settings')
-    .upsert(payload, { onConflict: 'profile_id' });
+  if (state.supportsExtendedSettings) {
+    const fullPayload = {
+      ...basePayload,
+      theme_mode: state.themeMode,
+      auto_flip_human: state.autoFlipHuman,
+    };
 
-  if (error) {
-    setCloudStatus(`Settings save failed: ${error.message}`, 'error');
+    const { error } = await state.supabase
+      .from('user_settings')
+      .upsert(fullPayload, { onConflict: 'profile_id' });
+
+    if (!error) return;
+
+    const message = (error.message || '').toLowerCase();
+    if (!message.includes('theme_mode') && !message.includes('auto_flip_human')) {
+      setCloudStatus(`Settings save failed: ${error.message}`, 'error');
+      return;
+    }
+
+    state.supportsExtendedSettings = false;
+  }
+
+  const { error: baseError } = await state.supabase
+    .from('user_settings')
+    .upsert(basePayload, { onConflict: 'profile_id' });
+
+  if (baseError) {
+    setCloudStatus(`Settings save failed: ${baseError.message}`, 'error');
   }
 }
-
 function queueSettingsSave() {
   if (state.settingsTimer) clearTimeout(state.settingsTimer);
   state.settingsTimer = setTimeout(() => {
@@ -1748,6 +1910,7 @@ function queueSettingsSave() {
 }
 
 async function fetchRecentGames() {
+  if (!recentGamesEl) return;
   if (!state.supabase || !state.player) return;
 
   const { data, error } = await state.supabase
@@ -1787,15 +1950,16 @@ async function fetchRecentGames() {
     loadBtn.type = 'button';
     loadBtn.textContent = 'Load';
     loadBtn.addEventListener('click', () => {
-      cloudGameIdEl.value = game.id;
-      loadCloudGame();
+      if (cloudGameIdEl) cloudGameIdEl.value = game.id;
+      loadCloudGameById(game.id).catch(error => {
+        setCloudStatus('Load failed: ' + error.message, 'error');
+      });
     });
 
     item.append(title, meta, loadBtn);
     recentGamesEl.appendChild(item);
   }
 }
-
 async function removeSubscription() {
   if (state.channel && state.supabase) {
     await state.supabase.removeChannel(state.channel);
@@ -1879,7 +2043,14 @@ async function createCloudGame() {
   }
 
   state.gameId = data.id;
-  cloudGameIdEl.value = data.id;
+  if (cloudGameIdEl) cloudGameIdEl.value = data.id;
+
+  try {
+    localStorage.setItem(activeGameStorageKey(), data.id);
+  } catch {
+    // no-op
+  }
+
   setCloudStatus(`Created cloud game ${data.id}.`, 'ok');
   setSyncPill('Cloud live', 'connected');
 
@@ -1893,7 +2064,7 @@ async function saveCloudGame(createIfMissing = true) {
   if (!state.gameId) {
     if (!createIfMissing) return;
     await createCloudGame();
-    return;
+    if (!state.gameId) return;
   }
 
   const payload = gamePayload();
@@ -1909,6 +2080,13 @@ async function saveCloudGame(createIfMissing = true) {
     return;
   }
 
+  try {
+    localStorage.setItem(activeGameStorageKey(), state.gameId);
+  } catch {
+    // no-op
+  }
+
+  persistLocalBoardSnapshot();
   setCloudStatus(`Saved to cloud (${new Date().toLocaleTimeString()}).`, 'ok');
   setSyncPill('Cloud live', 'connected');
   await fetchRecentGames();
@@ -1927,32 +2105,60 @@ function queueCloudSave() {
   }, 300);
 }
 
-async function loadCloudGame() {
+async function loadCloudGameById(id, options = {}) {
   if (!state.supabase || !state.player) return;
 
-  const id = cloudGameIdEl.value.trim();
-  if (!id) {
+  const gameId = (id || '').trim();
+  if (!gameId) {
     setCloudStatus('Enter a cloud game ID to load.', 'error');
     return;
   }
 
+  const { silentStatus = false } = options;
+
   const { data, error } = await state.supabase
     .from('chess_games')
     .select('*')
-    .eq('id', id)
+    .eq('id', gameId)
     .eq('owner_profile_id', state.player.playerId)
     .single();
 
   if (error) {
+    state.gameId = null;
+    if (cloudGameIdEl) cloudGameIdEl.value = '';
+    try {
+      localStorage.removeItem(activeGameStorageKey());
+    } catch {
+      // no-op
+    }
+
     setCloudStatus(`Load failed: ${error.message}`, 'error');
     return;
   }
 
-  state.gameId = id;
+  state.gameId = gameId;
+  if (cloudGameIdEl) cloudGameIdEl.value = gameId;
+
+  try {
+    localStorage.setItem(activeGameStorageKey(), gameId);
+  } catch {
+    // no-op
+  }
+
   applyCloudRow(data, false);
-  await subscribeToGame(id);
+  await subscribeToGame(gameId);
   await fetchRecentGames();
-  setCloudStatus(`Loaded cloud game ${id}.`, 'ok');
+
+  if (!silentStatus) {
+    setCloudStatus(`Loaded cloud game ${gameId}.`, 'ok');
+  }
+}
+
+async function loadCloudGame() {
+  if (!state.supabase || !state.player) return;
+
+  const id = cloudGameIdEl ? cloudGameIdEl.value.trim() : (state.gameId || '').trim();
+  await loadCloudGameById(id);
 }
 
 async function copyCurrentGameId() {
@@ -1968,7 +2174,6 @@ async function copyCurrentGameId() {
     setCloudStatus('Could not copy game ID in this browser context.', 'error');
   }
 }
-
 async function loadProfileAndSettings() {
   const { data: profileRow, error: profileError } = await state.supabase
     .from('profiles')
@@ -1982,42 +2187,88 @@ async function loadProfileAndSettings() {
 
   state.player.username = profileRow.username;
   state.player.displayName = profileRow.display_name;
-  accountUsernameEl.textContent = profileRow.display_name || profileRow.username;
-  accountEmailEl.textContent = `@${profileRow.username}`;
+  if (accountUsernameEl) accountUsernameEl.textContent = profileRow.display_name || profileRow.username;
+  if (accountEmailEl) accountEmailEl.textContent = `@${profileRow.username}`;
 
-  const { data: settingsRow } = await state.supabase
+  let settingsRow = null;
+
+  const { data: fullSettings, error: fullError } = await state.supabase
     .from('user_settings')
-    .select('piece_style,board_style,sound_enabled,auto_sync_enabled')
+    .select('piece_style,board_style,sound_enabled,auto_sync_enabled,theme_mode,auto_flip_human')
     .eq('profile_id', state.player.playerId)
     .maybeSingle();
+
+  if (!fullError) {
+    settingsRow = fullSettings;
+  } else {
+    const message = (fullError.message || '').toLowerCase();
+    if (!message.includes('theme_mode') && !message.includes('auto_flip_human')) {
+      throw fullError;
+    }
+
+    state.supportsExtendedSettings = false;
+
+    const { data: baseSettings, error: baseError } = await state.supabase
+      .from('user_settings')
+      .select('piece_style,board_style,sound_enabled,auto_sync_enabled')
+      .eq('profile_id', state.player.playerId)
+      .maybeSingle();
+
+    if (baseError) throw baseError;
+    settingsRow = baseSettings;
+  }
 
   if (settingsRow) {
     state.pieceStyle = settingsRow.piece_style || state.pieceStyle;
     state.boardStyle = settingsRow.board_style || state.boardStyle;
     state.soundEnabled = settingsRow.sound_enabled ?? state.soundEnabled;
     state.autoSyncEnabled = settingsRow.auto_sync_enabled ?? state.autoSyncEnabled;
+
+    if (typeof settingsRow.theme_mode === 'string') {
+      state.themeMode = normalizeThemeMode(settingsRow.theme_mode);
+    }
+
+    if (typeof settingsRow.auto_flip_human === 'boolean') {
+      state.autoFlipHuman = settingsRow.auto_flip_human;
+    }
   }
 
-  pieceStyleEl.value = state.pieceStyle;
-  boardStyleEl.value = state.boardStyle;
-  soundEnabledEl.checked = state.soundEnabled;
-  autoSyncEnabledEl.checked = state.autoSyncEnabled;
+  const localThemeMode = readStoredThemeMode();
+  const localAutoFlipHuman = readStoredAutoFlipHuman();
+  if (localThemeMode) state.themeMode = localThemeMode;
+  if (localAutoFlipHuman != null) state.autoFlipHuman = localAutoFlipHuman;
+
+  if (pieceStyleEl) pieceStyleEl.value = state.pieceStyle;
+  if (boardStyleEl) boardStyleEl.value = state.boardStyle;
+  if (soundEnabledEl) soundEnabledEl.checked = state.soundEnabled;
+  if (autoSyncEnabledEl) autoSyncEnabledEl.checked = state.autoSyncEnabled;
+  if (themeModeEl) themeModeEl.value = state.themeMode;
+  if (autoFlipHumanEl) autoFlipHumanEl.checked = state.autoFlipHuman;
+
+  persistLocalPreferences();
   applyTheme();
 }
-
 function wireUi() {
-  document.getElementById('btn-new-game').addEventListener('click', newGame);
-  document.getElementById('btn-undo').addEventListener('click', undoMove);
-  document.getElementById('btn-flip').addEventListener('click', () => {
-    state.orientation = state.orientation === 'white' ? 'black' : 'white';
-    refreshBoard();
-  });
-  document.getElementById('btn-clear-history').addEventListener('click', clearGameLog);
+  const newGameBtn = document.getElementById('btn-new-game');
+  if (newGameBtn) newGameBtn.addEventListener('click', newGame);
 
-  document.getElementById('btn-create-cloud').addEventListener('click', createCloudGame);
-  document.getElementById('btn-save-cloud').addEventListener('click', () => saveCloudGame(true));
-  document.getElementById('btn-load-cloud').addEventListener('click', loadCloudGame);
-  document.getElementById('btn-copy-id').addEventListener('click', copyCurrentGameId);
+  const undoBtn = document.getElementById('btn-undo');
+  if (undoBtn) undoBtn.addEventListener('click', undoMove);
+
+  const clearHistoryBtn = document.getElementById('btn-clear-history');
+  if (clearHistoryBtn) clearHistoryBtn.addEventListener('click', clearGameLog);
+
+  const createCloudBtn = document.getElementById('btn-create-cloud');
+  if (createCloudBtn) createCloudBtn.addEventListener('click', createCloudGame);
+
+  const saveCloudBtn = document.getElementById('btn-save-cloud');
+  if (saveCloudBtn) saveCloudBtn.addEventListener('click', () => saveCloudGame(true));
+
+  const loadCloudBtn = document.getElementById('btn-load-cloud');
+  if (loadCloudBtn) loadCloudBtn.addEventListener('click', loadCloudGame);
+
+  const copyCloudBtn = document.getElementById('btn-copy-id');
+  if (copyCloudBtn) copyCloudBtn.addEventListener('click', copyCurrentGameId);
 
   if (analyzeAllBtnEl) {
     analyzeAllBtnEl.addEventListener('click', () => {
@@ -2042,33 +2293,62 @@ function wireUi() {
     });
   }
 
-  document.getElementById('btn-logout').addEventListener('click', async () => {
-    await removeSubscription();
-    signOutAndRedirect('./login.html?v=20260309h');
-  });
+  const logoutBtn = document.getElementById('btn-logout');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      await removeSubscription();
+      signOutAndRedirect('./login.html?v=20260309h');
+    });
+  }
 
-  pieceStyleEl.addEventListener('change', () => {
-    state.pieceStyle = pieceStyleEl.value;
-    applyTheme();
-    refreshBoard();
-    queueSettingsSave();
-  });
+  if (pieceStyleEl) {
+    pieceStyleEl.addEventListener('change', () => {
+      state.pieceStyle = pieceStyleEl.value;
+      applyTheme();
+      refreshBoard();
+      queueSettingsSave();
+    });
+  }
 
-  boardStyleEl.addEventListener('change', () => {
-    state.boardStyle = boardStyleEl.value;
-    applyTheme();
-    queueSettingsSave();
-  });
+  if (boardStyleEl) {
+    boardStyleEl.addEventListener('change', () => {
+      state.boardStyle = boardStyleEl.value;
+      applyTheme();
+      queueSettingsSave();
+    });
+  }
 
-  soundEnabledEl.addEventListener('change', () => {
-    state.soundEnabled = soundEnabledEl.checked;
-    queueSettingsSave();
-  });
+  if (soundEnabledEl) {
+    soundEnabledEl.addEventListener('change', () => {
+      state.soundEnabled = soundEnabledEl.checked;
+      queueSettingsSave();
+    });
+  }
 
-  autoSyncEnabledEl.addEventListener('change', () => {
-    state.autoSyncEnabled = autoSyncEnabledEl.checked;
-    queueSettingsSave();
-  });
+  if (autoSyncEnabledEl) {
+    autoSyncEnabledEl.addEventListener('change', () => {
+      state.autoSyncEnabled = autoSyncEnabledEl.checked;
+      queueSettingsSave();
+    });
+  }
+
+  if (themeModeEl) {
+    themeModeEl.addEventListener('change', () => {
+      state.themeMode = normalizeThemeMode(themeModeEl.value);
+      persistLocalPreferences();
+      applyTheme();
+      queueSettingsSave();
+    });
+  }
+
+  if (autoFlipHumanEl) {
+    autoFlipHumanEl.addEventListener('change', () => {
+      state.autoFlipHuman = autoFlipHumanEl.checked;
+      persistLocalPreferences();
+      refreshUi();
+      queueSettingsSave();
+    });
+  }
 
   if (engineEnabledEl) {
     engineEnabledEl.addEventListener('change', () => {
@@ -2112,16 +2392,37 @@ function wireUi() {
       setEngineStatus('Stockfish strength set to ELO ' + state.engine.elo + '.', 'ok');
     });
   }
-}
 
+  const themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+  const refreshForSystemTheme = () => {
+    if (state.themeMode === 'auto') applyTheme();
+  };
+
+  if (typeof themeMedia.addEventListener === 'function') {
+    themeMedia.addEventListener('change', refreshForSystemTheme);
+  } else if (typeof themeMedia.addListener === 'function') {
+    themeMedia.addListener(refreshForSystemTheme);
+  }
+}
 async function boot() {
   if (!hasPlayerSession()) {
     window.location.href = './login.html?v=20260309h&next=index';
     return;
   }
 
+  if (!boardShell) {
+    throw new Error('Board element missing.');
+  }
+
   state.player = getPlayerSession();
   state.supabase = getSupabaseClient(state.player.playerToken);
+  const bootThemeMode = readStoredThemeMode();
+  const bootAutoFlipHuman = readStoredAutoFlipHuman();
+  if (bootThemeMode) state.themeMode = bootThemeMode;
+  if (bootAutoFlipHuman != null) state.autoFlipHuman = bootAutoFlipHuman;
+  applyDocumentTheme();
+  loadLocalActiveGameId();
+
   wireUi();
 
   try {
@@ -2137,6 +2438,8 @@ async function boot() {
 
   if (state.engine.enabled) {
     state.orientation = engineHumanColor();
+  } else if (state.autoFlipHuman) {
+    state.orientation = state.position.turn;
   }
 
   state.ground = Chessground(boardShell, {
@@ -2172,13 +2475,16 @@ async function boot() {
 
   await fetchRecentGames();
 
+  if (state.gameId) {
+    await loadCloudGameById(state.gameId, { silentStatus: true }).catch(() => {});
+  }
+
   if (state.engine.enabled) {
     setEngineStatus('Computer mode enabled. Press Start Stockfish Match.', 'ok');
   } else {
     setEngineStatus('Engine idle.', '');
   }
 }
-
 window.addEventListener('beforeunload', () => {
   removeSubscription().catch(() => {});
   cancelEngineSearch('Window unload');
@@ -2211,6 +2517,12 @@ window.addEventListener('beforeunload', () => {
 });
 
 boot();
+
+
+
+
+
+
 
 
 

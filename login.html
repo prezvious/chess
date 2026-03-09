@@ -10,7 +10,22 @@
     href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap"
     rel="stylesheet"
   />
-  <link rel="stylesheet" href="./auth.css?v=20260309h" />
+  <script>
+  (() => {
+    try {
+      const mode = localStorage.getItem('cloud-chess-theme-mode-v1') || 'auto';
+      const normalized = mode === 'light' || mode === 'dark' || mode === 'auto' ? mode : 'auto';
+      const resolved = normalized === 'light' || normalized === 'dark'
+        ? normalized
+        : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.dataset.themeMode = normalized;
+    } catch {
+      // no-op
+    }
+  })();
+</script>
+  <link rel="stylesheet" href="./auth.css?v=20260310a" />
 </head>
 <body class="auth-page auth-login">
   <main class="auth-shell">
@@ -73,6 +88,7 @@
     </section>
   </main>
 
-  <script type="module" src="./auth.js?v=20260309b"></script>
+  <script type="module" src="./auth.js?v=20260310a"></script>
 </body>
 </html>
+

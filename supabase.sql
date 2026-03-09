@@ -1,4 +1,4 @@
-﻿-- Universal Supabase schema for Cloud Chess Studio.
+-- Universal Supabase schema for Cloud Chess Studio.
 -- No Supabase Auth account is required for end users.
 
 create extension if not exists pgcrypto;
@@ -46,6 +46,8 @@ create table public.user_settings (
   board_style text not null default 'brown' check (board_style in ('brown', 'wood', 'blue')),
   sound_enabled boolean not null default true,
   auto_sync_enabled boolean not null default true,
+  theme_mode text not null default 'auto' check (theme_mode in ('auto', 'light', 'dark')),
+  auto_flip_human boolean not null default false,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );

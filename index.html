@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -18,7 +18,21 @@
     rel="stylesheet"
     href="https://cdn.jsdelivr.net/npm/@lichess-org/chessground@10.1.0/assets/chessground.base.css"
   />
-  <link rel="stylesheet" href="./styles.css?v=20260310c" />
+  <script>
+  (() => {
+    try {
+      const mode = localStorage.getItem('cloud-chess-theme-mode-v1') || 'auto';
+      const resolved = mode === 'light' || mode === 'dark'
+        ? mode
+        : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.dataset.themeMode = mode;
+    } catch {
+      // no-op
+    }
+  })();
+</script>
+  <link rel="stylesheet" href="./styles.css?v=20260310h" />
 </head>
 <body>
   <div class="app-shell">
@@ -41,7 +55,7 @@
 
         <div class="board-frame">
           <div class="board-arena">
-            <aside class="eval-column" aria-live="polite" aria-label="Live evaluation bar">
+            <aside class="eval-column hidden" aria-live="polite" aria-label="Post-game evaluation bar">
               <div class="eval-track" id="eval-track">
                 <div class="eval-fill eval-fill-black" id="eval-fill-black"></div>
                 <div class="eval-fill eval-fill-white" id="eval-fill-white"></div>
@@ -109,6 +123,7 @@
 
           <div class="button-row">
             <button class="btn" id="btn-logout" type="button">Logout</button>
+            <a class="btn link-btn" href="./settings.html?v=20260310h">Settings</a>
             <a class="btn link-btn" href="./login.html?v=20260309h">Auth Page</a>
           </div>
 
@@ -116,40 +131,11 @@
         </section>
 
         <section class="card">
-          <h2>Board Controls</h2>
+          <h2>Game Actions</h2>
           <div class="button-row">
             <button class="btn" id="btn-new-game" type="button">New Game</button>
             <button class="btn" id="btn-undo" type="button">Undo</button>
-            <button class="btn" id="btn-flip" type="button">Flip</button>
           </div>
-
-          <div class="field-grid">
-            <label>
-              Piece Media
-              <select id="piece-style">
-                <option value="2d">2D (Lichess cburnett)</option>
-                <option value="3d">3D (Lichess staunton)</option>
-              </select>
-            </label>
-            <label>
-              Board Texture
-              <select id="board-style">
-                <option value="brown">Brown</option>
-                <option value="wood">Wood</option>
-                <option value="blue">Blue</option>
-              </select>
-            </label>
-          </div>
-
-          <label class="toggle-row" for="sound-enabled">
-            <input type="checkbox" id="sound-enabled" checked />
-            <span>Enable Lichess move sounds</span>
-          </label>
-
-          <label class="toggle-row" for="auto-sync-enabled">
-            <input type="checkbox" id="auto-sync-enabled" checked />
-            <span>Auto-save to cloud game</span>
-          </label>
         </section>
 
         <section class="card">
@@ -190,29 +176,6 @@
           <div class="analysis-summary" id="analysis-summary">No analysis yet.</div>
           <div class="analysis-list" id="analysis-list"></div>
         </section>
-
-        <section class="card">
-          <h2>Cloud Game</h2>
-          <p class="hint">Only your own games are visible and editable.</p>
-
-          <div class="button-row">
-            <button class="btn btn-primary" id="btn-create-cloud" type="button">Create Cloud Game</button>
-            <button class="btn" id="btn-save-cloud" type="button">Save Snapshot</button>
-          </div>
-
-          <label>
-            Cloud Game ID
-            <input id="cloud-game-id" type="text" placeholder="Paste UUID and load" />
-          </label>
-
-          <div class="button-row">
-            <button class="btn" id="btn-load-cloud" type="button">Load Game</button>
-            <button class="btn" id="btn-copy-id" type="button">Copy ID</button>
-          </div>
-
-          <h3 class="subhead">Recent Cloud Games</h3>
-          <div class="recent-list" id="recent-games"></div>
-        </section>
       </aside>
     </main>
   </div>
@@ -226,15 +189,7 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=20260310g"></script>
+  <script type="module" src="./app.js?v=20260310h"></script>
 </body>
 </html>
-
-
-
-
-
-
-
-
 

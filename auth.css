@@ -1,4 +1,5 @@
-﻿:root {
+:root {
+  color-scheme: dark;
   --bg: #0a0f17;
   --bg-2: #111a26;
   --panel: rgba(8, 12, 18, 0.78);
@@ -350,3 +351,61 @@ body.auth-page {
     font-size: 1.65rem;
   }
 }
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #eef2f8;
+  --bg-2: #f4f8fd;
+  --panel: rgba(255, 255, 255, 0.9);
+  --line: rgba(19, 42, 76, 0.2);
+  --text: #1c2738;
+  --muted: #60728e;
+  --shadow: 0 24px 80px rgba(29, 47, 77, 0.2);
+}
+
+:root[data-theme='light'] body.auth-page {
+  background: radial-gradient(1300px 500px at 10% 0%, rgba(47, 198, 255, 0.26), transparent 55%),
+    radial-gradient(1200px 520px at 94% 100%, rgba(255, 157, 77, 0.2), transparent 50%),
+    linear-gradient(160deg, var(--bg), var(--bg-2));
+}
+
+:root[data-theme='light'] .auth-signup {
+  background: radial-gradient(1300px 500px at 0% 8%, rgba(255, 116, 146, 0.24), transparent 55%),
+    radial-gradient(1200px 520px at 94% 100%, rgba(80, 205, 137, 0.2), transparent 50%),
+    linear-gradient(160deg, #edf2fa, #f8edf3);
+}
+
+:root[data-theme='light'] .auth-shell {
+  border-color: rgba(19, 42, 76, 0.2);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+:root[data-theme='light'] .auth-form-panel {
+  border-left-color: rgba(19, 42, 76, 0.2);
+}
+
+:root[data-theme='light'] .switch-link {
+  color: #166ab9;
+}
+
+:root[data-theme='light'] .auth-signup .switch-link {
+  color: #aa3b70;
+}
+
+:root[data-theme='light'] .auth-form input {
+  background: rgba(246, 250, 255, 0.96);
+}
+
+:root[data-theme='light'] .project-settings {
+  border-color: rgba(19, 42, 76, 0.25);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+:root[data-theme='light'] .project-settings summary {
+  color: #23395c;
+}
+
+:root[data-theme='light'] .static-box code {
+  color: #1a6db9;
+}
+

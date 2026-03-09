@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="description"
+    content="Settings for Cloud Chess Studio: board appearance, theme, cloud game controls, and behavior preferences."
+  />
+  <title>Cloud Chess Studio - Settings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <script>
+  (() => {
+    try {
+      const mode = localStorage.getItem('cloud-chess-theme-mode-v1') || 'auto';
+      const resolved = mode === 'light' || mode === 'dark'
+        ? mode
+        : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.dataset.themeMode = mode;
+    } catch {
+      // no-op
+    }
+  })();
+</script>
+  <link rel="stylesheet" href="./styles.css?v=20260310h" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <p class="kicker">Preferences + Cloud Management</p>
+      <h1>Settings</h1>
+      <p class="hero-sub">Customize visuals, behavior, and cloud game controls from one page.</p>
+      <div class="button-row top-actions">
+        <a class="btn link-btn" href="./index.html?v=20260310h">Back to Board</a>
+      </div>
+    </header>
+
+    <main class="settings-layout">
+      <section class="control-panel">
+        <section class="card account-card">
+          <h2>Account</h2>
+          <div class="account-meta">
+            <div>
+              <span class="meta-label">User</span>
+              <strong id="account-username">Loading...</strong>
+            </div>
+            <div>
+              <span class="meta-label">Handle</span>
+              <strong id="account-email">Loading...</strong>
+            </div>
+          </div>
+
+          <div class="button-row">
+            <a class="btn link-btn" href="./index.html?v=20260310h">Board</a>
+            <button class="btn" id="btn-logout" type="button">Logout</button>
+            <a class="btn link-btn" href="./login.html?v=20260309h">Auth Page</a>
+          </div>
+
+          <div class="cloud-status" id="cloud-status">Connecting to Supabase...</div>
+        </section>
+
+        <section class="card">
+          <h2>Settings</h2>
+
+          <div class="field-grid">
+            <label>
+              Piece Media
+              <select id="piece-style">
+                <option value="2d">2D (Lichess cburnett)</option>
+                <option value="3d">3D (Lichess staunton)</option>
+              </select>
+            </label>
+            <label>
+              Board Texture
+              <select id="board-style">
+                <option value="brown">Brown</option>
+                <option value="wood">Wood</option>
+                <option value="blue">Blue</option>
+              </select>
+            </label>
+          </div>
+
+          <label>
+            Theme
+            <select id="theme-mode">
+              <option value="auto">Automatic (System)</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
+
+          <label class="toggle-row" for="sound-enabled">
+            <input type="checkbox" id="sound-enabled" checked />
+            <span>Enable Lichess move sounds</span>
+          </label>
+
+          <label class="toggle-row" for="auto-sync-enabled">
+            <input type="checkbox" id="auto-sync-enabled" checked />
+            <span>Auto-save to cloud game</span>
+          </label>
+
+          <label class="toggle-row" for="auto-flip-human">
+            <input type="checkbox" id="auto-flip-human" />
+            <span>Auto-flip board in human vs human games</span>
+          </label>
+        </section>
+
+        <section class="card">
+          <h2>Cloud Game</h2>
+          <p class="hint">Only your own games are visible and editable.</p>
+
+          <div class="button-row">
+            <button class="btn btn-primary" id="btn-create-cloud" type="button">Create Cloud Game</button>
+            <button class="btn" id="btn-save-cloud" type="button">Save Snapshot</button>
+          </div>
+
+          <label>
+            Cloud Game ID
+            <input id="cloud-game-id" type="text" placeholder="Paste UUID and load" />
+          </label>
+
+          <div class="button-row">
+            <button class="btn" id="btn-load-cloud" type="button">Load Game</button>
+            <button class="btn" id="btn-copy-id" type="button">Copy ID</button>
+          </div>
+
+          <h3 class="subhead">Recent Cloud Games</h3>
+          <div class="recent-list" id="recent-games"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="./settings.js?v=20260310h"></script>
+</body>
+</html>
+

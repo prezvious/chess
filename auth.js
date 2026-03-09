@@ -1,4 +1,4 @@
-﻿import {
+import {
   getSupabaseClient,
   hasPlayerSession,
   savePlayerSession,
@@ -14,6 +14,14 @@ const passwordEl = document.getElementById('password');
 const submitBtn = document.getElementById('submit-btn');
 const messageEl = document.getElementById('auth-message');
 const apiUrlEl = document.getElementById('api-url');
+
+const params = new URLSearchParams(window.location.search);
+
+function authNextPath() {
+  const next = params.get('next');
+  if (next === 'settings') return './settings.html?v=20260310h';
+  return './index.html?v=20260310h';
+}
 
 function setMessage(text, kind = '') {
   messageEl.textContent = text;
@@ -60,8 +68,8 @@ async function handleSignup() {
   }
 
   saveSessionFromPayload(data);
-  setMessage('Signup successful. Entering board...', 'ok');
-  window.location.href = './index.html';
+  setMessage('Signup successful. Redirecting...', 'ok');
+  window.location.href = authNextPath();
 }
 
 async function handleLogin() {
@@ -80,8 +88,8 @@ async function handleLogin() {
   }
 
   saveSessionFromPayload(data);
-  setMessage('Login successful. Opening board...', 'ok');
-  window.location.href = './index.html';
+  setMessage('Login successful. Redirecting...', 'ok');
+  window.location.href = authNextPath();
 }
 
 form.addEventListener('submit', async event => {
@@ -100,7 +108,7 @@ form.addEventListener('submit', async event => {
 });
 
 if (hasPlayerSession()) {
-  window.location.href = './index.html';
+  window.location.href = authNextPath();
 }
 
 const config = readSupabaseConfig();
@@ -108,7 +116,7 @@ if (apiUrlEl) {
   apiUrlEl.textContent = config.url;
 }
 
-const params = new URLSearchParams(window.location.search);
-if (params.get('next') === 'index') {
+const next = params.get('next');
+if (next === 'index' || next === 'settings') {
   setMessage('Please login to continue.', '');
 }
