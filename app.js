@@ -1,4 +1,4 @@
-﻿import { Chessground } from 'https://cdn.jsdelivr.net/npm/@lichess-org/chessground@10.1.0/dist/chessground.min.js';
+import { Chessground } from 'https://cdn.jsdelivr.net/npm/@lichess-org/chessground@10.1.0/dist/chessground.min.js';
 import { uciToMove } from 'https://cdn.jsdelivr.net/npm/@lichess-org/chessground@10.1.0/dist/util.js';
 import { Chess, compat, fen, san, variant } from './vendor/chessops.bundle.js';
 import {
@@ -553,6 +553,10 @@ function renderLiveEvaluationBar() {
   evalFillBlackEl.style.height = blackPercent.toFixed(1) + '%';
   evalFillWhiteEl.style.height = whitePercent.toFixed(1) + '%';
   evalReadoutEl.textContent = state.liveEval.available ? state.liveEval.scoreText : '--';
+
+  const readoutOnDark = blackPercent >= 50;
+  evalReadoutEl.classList.toggle('on-dark', readoutOnDark);
+  evalReadoutEl.classList.toggle('on-light', !readoutOnDark);
 
   if (state.liveEval.loading) {
     evalTrackEl.classList.add('loading');
