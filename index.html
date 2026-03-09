@@ -18,7 +18,7 @@
     rel="stylesheet"
     href="https://cdn.jsdelivr.net/npm/@lichess-org/chessground@10.1.0/assets/chessground.base.css"
   />
-  <link rel="stylesheet" href="./styles.css?v=20260310b" />
+  <link rel="stylesheet" href="./styles.css?v=20260310c" />
 </head>
 <body>
   <div class="app-shell">
@@ -40,12 +40,23 @@
         </div>
 
         <div class="board-frame">
-          <div
-            id="chessground"
-            class="cg-wrap board-shell"
-            data-piece-style="2d"
-            data-board-style="brown"
-          ></div>
+          <div class="board-arena">
+            <aside class="eval-column" aria-live="polite" aria-label="Live evaluation bar">
+              <div class="eval-track" id="eval-track">
+                <div class="eval-fill eval-fill-black" id="eval-fill-black"></div>
+                <div class="eval-fill eval-fill-white" id="eval-fill-white"></div>
+                <div class="eval-readout" id="eval-readout">+0.00</div>
+              </div>
+            </aside>
+            <div class="board-stage">
+              <div
+                id="chessground"
+                class="cg-wrap board-shell"
+                data-piece-style="2d"
+                data-board-style="brown"
+              ></div>
+            </div>
+          </div>
           <div class="arena-cleaner" id="arena-cleaner" aria-hidden="true">
             <div class="arena-cleaner-card">
               <div class="arena-cleaner-head">
@@ -215,9 +226,10 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=20260310f"></script>
+  <script type="module" src="./app.js?v=20260310g"></script>
 </body>
 </html>
+
 
 
 

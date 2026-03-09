@@ -41,7 +41,8 @@ const ENGINE_MAX_ELO = 2200;
 const ENGINE_DEFAULT_ELO = 900;
 const ENGINE_CALIBRATION_GAMES = 5;
 const ENGINE_ANALYSIS_DEPTH = 12;
-const STOCKFISH_WORKER_PATH = './stockfish-worker.js?v=20260310f';
+const LIVE_EVAL_DEPTH = 10;
+const STOCKFISH_WORKER_PATH = './stockfish-worker.js?v=20260310g';
 
 const statusCard = document.getElementById('status-card');
 const statusText = document.getElementById('status-text');
@@ -82,6 +83,10 @@ const analysisListEl = document.getElementById('analysis-list');
 const arenaCleanerEl = document.getElementById('arena-cleaner');
 const arenaCleanerBarEl = document.getElementById('arena-cleaner-bar');
 const arenaCleanerTextEl = document.getElementById('arena-cleaner-text');
+const evalTrackEl = document.getElementById('eval-track');
+const evalFillBlackEl = document.getElementById('eval-fill-black');
+const evalFillWhiteEl = document.getElementById('eval-fill-white');
+const evalReadoutEl = document.getElementById('eval-readout');
 
 const PROMOTION_ROLES = ['queen', 'rook', 'bishop', 'knight'];
 const PROMOTION_TEXT = {
@@ -160,6 +165,17 @@ const state = {
     summary: null,
     token: 0,
     depth: ENGINE_ANALYSIS_DEPTH,
+  },
+  liveEval: {
+    timer: null,
+    token: 0,
+    pendingFen: '',
+    lastFen: '',
+    blackPercent: 50,
+    scoreText: '+0.00',
+    available: true,
+    loading: false,
+    nextRetryAt: 0,
   },
 };
 
@@ -514,6 +530,37 @@ function orientScore(score, sideToMove, targetColor) {
   };
 }
 
+function scoreToBlackBarPercent(score) {
+  if (!score) return 50;
+
+  if (score.type === 'mate') {
+    if (score.value > 0) return 0;
+    if (score.value < 0) return 100;
+    return 50;
+  }
+
+  const cp = clamp(score.value, -1800, 1800);
+  const whitePercent = 50 + 50 * Math.tanh(cp / 360);
+  return clamp(100 - whitePercent, 0, 100);
+}
+
+function renderLiveEvaluationBar() {
+  if (!evalTrackEl || !evalFillBlackEl || !evalFillWhiteEl || !evalReadoutEl) return;
+
+  const blackPercent = clamp(state.liveEval.blackPercent, 0, 100);
+  const whitePercent = 100 - blackPercent;
+
+  evalFillBlackEl.style.height = blackPercent.toFixed(1) + '%';
+  evalFillWhiteEl.style.height = whitePercent.toFixed(1) + '%';
+  evalReadoutEl.textContent = state.liveEval.available ? state.liveEval.scoreText : '--';
+
+  if (state.liveEval.loading) {
+    evalTrackEl.classList.add('loading');
+  } else {
+    evalTrackEl.classList.remove('loading');
+  }
+}
+
 function classifyMove(cpl, playedUci, bestUci) {
   const normalize = text => (text || '').trim().toLowerCase();
   if (bestUci && normalize(playedUci) === normalize(bestUci)) return 'best';
@@ -686,6 +733,8 @@ function refreshUi() {
   renderCaptured();
   renderEngineControls();
   renderAnalysis();
+  renderLiveEvaluationBar();
+  queueLiveEvaluation();
 }
 
 function isPromotionNeeded(move, piece) {
@@ -1139,6 +1188,109 @@ function requestPositionAnalysis(fenText, depth) {
   });
 }
 
+function queueLiveEvaluation(delayMs = 160) {
+  if (!state.position) return;
+
+  const fenText = currentFen();
+  state.liveEval.pendingFen = fenText;
+
+  if (state.analysis.running || state.cleaningArena) {
+    state.liveEval.loading = false;
+    renderLiveEvaluationBar();
+    return;
+  }
+
+  if (!state.liveEval.available && Date.now() < state.liveEval.nextRetryAt) {
+    state.liveEval.loading = false;
+    renderLiveEvaluationBar();
+    return;
+  }
+
+  if (state.liveEval.available && state.liveEval.lastFen === fenText && !state.liveEval.loading) {
+    renderLiveEvaluationBar();
+    return;
+  }
+
+  if (state.liveEval.timer) {
+    clearTimeout(state.liveEval.timer);
+    state.liveEval.timer = null;
+  }
+
+  state.liveEval.loading = true;
+  renderLiveEvaluationBar();
+
+  state.liveEval.timer = setTimeout(() => {
+    state.liveEval.timer = null;
+    updateLiveEvaluation(fenText).catch(() => {});
+  }, delayMs);
+}
+
+async function updateLiveEvaluation(fenText) {
+  if (!state.position) return;
+  if (state.analysis.running || state.cleaningArena) return;
+  if (fenText !== state.liveEval.pendingFen) return;
+
+  if (state.analysis.pending) {
+    queueLiveEvaluation(180);
+    return;
+  }
+
+  const ready = await initAnalysisWorker();
+  if (!ready) {
+    state.liveEval.available = false;
+    state.liveEval.nextRetryAt = Date.now() + 8000;
+    state.liveEval.loading = false;
+    renderLiveEvaluationBar();
+    return;
+  }
+
+  if (fenText !== state.liveEval.pendingFen || state.analysis.running || state.cleaningArena) return;
+
+  if (state.analysis.pending) {
+    queueLiveEvaluation(180);
+    return;
+  }
+
+  const token = state.liveEval.token + 1;
+  state.liveEval.token = token;
+
+  try {
+    const result = await requestPositionAnalysis(fenText, LIVE_EVAL_DEPTH);
+    if (token !== state.liveEval.token || fenText !== state.liveEval.pendingFen) return;
+
+    const turnToken = fenText.trim().split(/\s+/)[1];
+    const sideToMove = turnToken === 'b' ? 'black' : 'white';
+    const whiteScore = orientScore(result.score, sideToMove, 'white');
+
+    state.liveEval.blackPercent = scoreToBlackBarPercent(whiteScore);
+    state.liveEval.scoreText = formatEval(whiteScore);
+    state.liveEval.available = true;
+    state.liveEval.nextRetryAt = 0;
+    state.liveEval.loading = false;
+    state.liveEval.lastFen = fenText;
+    renderLiveEvaluationBar();
+  } catch (error) {
+    if (token !== state.liveEval.token) return;
+
+    const message = String(error && error.message ? error.message : error || '');
+    const lowerMessage = message.toLowerCase();
+    if (lowerMessage.includes('overlap')) {
+      queueLiveEvaluation(180);
+      return;
+    }
+
+    if (lowerMessage.includes('reset') || lowerMessage.includes('cancel')) {
+      queueLiveEvaluation(120);
+      return;
+    }
+
+    state.liveEval.available = false;
+    state.liveEval.nextRetryAt = Date.now() + 8000;
+    state.liveEval.loading = false;
+    renderLiveEvaluationBar();
+  }
+}
+
 async function analyzeAllMoves() {
   if (!state.moves.length) {
     resetAnalysisState(true);
@@ -1163,7 +1315,9 @@ async function analyzeAllMoves() {
   state.analysis.running = true;
   state.analysis.entries = [];
   state.analysis.summary = null;
+  state.liveEval.loading = false;
   renderAnalysis();
+  renderLiveEvaluationBar();
 
   const replay = createPositionFromFen(INITIAL_FEN);
   const entries = [];
@@ -1237,12 +1391,14 @@ async function analyzeAllMoves() {
     state.analysis.summary = summarizeAnalysis(entries);
     state.analysis.running = false;
     renderAnalysis();
+    queueLiveEvaluation(220);
     setEngineStatus('Analysis complete (' + entries.length + ' moves).', 'ok');
   } catch (error) {
     if (token !== state.analysis.token) return;
 
     state.analysis.running = false;
     renderAnalysis();
+    queueLiveEvaluation(220);
     setEngineStatus('Analysis failed: ' + error.message, 'error');
   }
 }
@@ -2024,6 +2180,11 @@ window.addEventListener('beforeunload', () => {
   cancelEngineSearch('Window unload');
   cancelAnalysisRequest('Window unload');
 
+  if (state.liveEval.timer) {
+    clearTimeout(state.liveEval.timer);
+    state.liveEval.timer = null;
+  }
+
   if (state.engine.worker) {
     try {
       state.engine.worker.terminate();
@@ -2046,6 +2207,23 @@ window.addEventListener('beforeunload', () => {
 });
 
 boot();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
