@@ -118,10 +118,19 @@ body {
   min-height: 100vh;
 }
 
+body.modal-open {
+  overflow: hidden;
+}
+
 .app-shell {
   width: min(1260px, 100%);
   margin: 0 auto;
   padding: 24px 12px 32px;
+}
+
+.app-shell.app-shell-inert {
+  pointer-events: none;
+  user-select: none;
 }
 
 .hero {
@@ -771,6 +780,185 @@ input::placeholder {
   color: var(--sync-error);
 }
 
+.bot-action-card {
+  display: grid;
+}
+
+.bot-launch-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 10px 14px;
+  font-size: 0.95rem;
+}
+
+.bot-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  z-index: 998;
+  padding: 14px;
+  background: rgba(7, 12, 20, 0.66);
+  backdrop-filter: blur(2px);
+}
+
+.bot-overlay.open {
+  display: grid;
+}
+
+.bot-dialog {
+  width: min(560px, 95vw);
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: linear-gradient(168deg, var(--panel), var(--panel-2));
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.bot-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.bot-dialog-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.bot-grid {
+  grid-template-columns: 1fr;
+}
+
+.bot-mode-group {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 10px 0 0;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  background: var(--button-bg);
+}
+
+.bot-mode-group legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.radio-row {
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.radio-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.bot-elo-field {
+  margin-top: 10px;
+}
+
+.elo-slider-wrap {
+  position: relative;
+  --elo-slider-pct: 50%;
+  padding-bottom: 22px;
+}
+
+.elo-slider-wrap input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 30px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+
+.elo-slider-wrap input[type='range']::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 174, 82, 0.86), rgba(255, 255, 255, 0.72));
+}
+
+.elo-slider-wrap input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -7px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.64);
+  background: linear-gradient(145deg, #ff9044, #ffc270);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+}
+
+.elo-slider-wrap input[type='range']::-moz-range-track {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 174, 82, 0.86), rgba(255, 255, 255, 0.72));
+}
+
+.elo-slider-wrap input[type='range']::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.64);
+  background: linear-gradient(145deg, #ff9044, #ffc270);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+}
+
+.elo-slider-wrap input[type='range']:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.elo-slider-badge {
+  position: absolute;
+  left: var(--elo-slider-pct);
+  bottom: 0;
+  transform: translateX(-50%);
+  min-width: 48px;
+  text-align: center;
+  font-size: 0.76rem;
+  line-height: 1;
+  color: var(--range-strong);
+}
+
+.bot-elo-field .range-meta {
+  justify-content: flex-start;
+}
+
+.bot-note {
+  margin: 8px 0 0;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.76rem;
+  color: var(--muted);
+  background: var(--button-bg);
+}
+
+.bot-note.locked {
+  border-color: rgba(247, 181, 0, 0.45);
+  color: var(--warn);
+}
+
+#btn-start-stockfish {
+  width: 100%;
+}
 .engine-grid {
   align-items: end;
 }
@@ -1071,11 +1259,25 @@ input::placeholder {
   .control-panel .card {
     padding: 10px;
   }
+  .bot-overlay {
+    padding: 10px;
+  }
+
+  .bot-dialog {
+    width: min(100%, 98vw);
+    padding: 12px;
+  }
+
+  .elo-slider-badge {
+    font-size: 0.72rem;
+  }
 
   .promotion-grid {
     grid-template-columns: 1fr;
   }
 }
+
+
 
 
 

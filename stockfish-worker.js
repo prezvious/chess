@@ -1,11 +1,6 @@
 ﻿const STOCKFISH_VERSION = '18.0.5';
 const STOCKFISH_SOURCES = [
   {
-    id: 'local',
-    js: './stockfish/stockfish-18-lite-single.js',
-    wasm: './stockfish/stockfish-18-lite-single.wasm',
-  },
-  {
     id: 'unpkg',
     js: `https://unpkg.com/stockfish@${STOCKFISH_VERSION}/bin/stockfish-18-lite-single.js`,
     wasm: `https://unpkg.com/stockfish@${STOCKFISH_VERSION}/bin/stockfish-18-lite-single.wasm`,

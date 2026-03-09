@@ -98,7 +98,7 @@ execute function public.set_updated_at();
 create or replace function public.create_player(
   p_username text,
   p_display_name text,
-  p_password_hash text
+  p_password text
 )
 returns jsonb
 language plpgsql
@@ -108,18 +108,20 @@ as $$
 declare
   clean_username text;
   clean_display text;
+  clean_password text;
   new_player_id uuid;
   new_token text;
 begin
   clean_username := lower(trim(coalesce(p_username, '')));
   clean_display := trim(coalesce(p_display_name, ''));
+  clean_password := coalesce(p_password, '');
 
   if clean_username !~ '^[a-z0-9_-]{3,30}$' then
     raise exception 'Username must use 3-30 chars: a-z, 0-9, _ or -';
   end if;
 
-  if length(trim(coalesce(p_password_hash, ''))) < 32 then
-    raise exception 'Invalid password hash';
+  if length(clean_password) < 8 then
+    raise exception 'Password must be at least 8 characters';
   end if;
 
   if clean_display = '' then
@@ -129,7 +131,7 @@ begin
   new_token := encode(extensions.gen_random_bytes(24), 'hex');
 
   insert into public.profiles (owner_token, username, display_name, password_hash)
-  values (new_token, clean_username, clean_display, p_password_hash)
+  values (new_token, clean_username, clean_display, crypt(clean_password, gen_salt('bf', 12)))
   returning id into new_player_id;
 
   insert into public.user_settings (profile_id, owner_token)
@@ -150,7 +152,7 @@ $$;
 -- Validate login and rotate token.
 create or replace function public.login_player(
   p_username text,
-  p_password_hash text
+  p_password text
 )
 returns jsonb
 language plpgsql
@@ -159,20 +161,36 @@ set search_path = public, extensions, pg_catalog
 as $$
 declare
   clean_username text;
+  clean_password text;
   player_row public.profiles%rowtype;
   new_token text;
 begin
   clean_username := lower(trim(coalesce(p_username, '')));
+  clean_password := coalesce(p_password, '');
 
   select *
   into player_row
   from public.profiles
   where username = clean_username
-    and password_hash = p_password_hash
   limit 1;
 
   if not found then
     return null;
+  end if;
+
+  if player_row.password_hash ~ '^\$2[aby]\$' then
+    if player_row.password_hash <> crypt(clean_password, player_row.password_hash) then
+      return null;
+    end if;
+  else
+    if player_row.password_hash <> encode(digest(clean_password, 'sha256'), 'hex') then
+      return null;
+    end if;
+
+    -- Upgrade legacy unsalted SHA-256 password to bcrypt after successful login.
+    update public.profiles
+    set password_hash = crypt(clean_password, gen_salt('bf', 12))
+    where id = player_row.id;
   end if;
 
   new_token := encode(extensions.gen_random_bytes(24), 'hex');

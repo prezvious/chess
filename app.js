@@ -62,28 +62,25 @@ const scoreBlackEl = document.getElementById('score-black');
 const accountUsernameEl = document.getElementById('account-username');
 const accountEmailEl = document.getElementById('account-email');
 
-const pieceStyleEl = document.getElementById('piece-style');
-const boardStyleEl = document.getElementById('board-style');
-const soundEnabledEl = document.getElementById('sound-enabled');
-const autoSyncEnabledEl = document.getElementById('auto-sync-enabled');
-const themeModeEl = document.getElementById('theme-mode');
-const autoFlipHumanEl = document.getElementById('auto-flip-human');
-
 const cloudStatusEl = document.getElementById('cloud-status');
-const cloudGameIdEl = document.getElementById('cloud-game-id');
-const recentGamesEl = document.getElementById('recent-games');
 const promotionOverlayEl = document.getElementById('promotion-overlay');
 const promotionGridEl = document.getElementById('promotion-grid');
 const promotionCancelEl = document.getElementById('promotion-cancel');
-const engineEnabledEl = document.getElementById('engine-enabled');
+const openBotModalBtnEl = document.getElementById('btn-open-bot-modal');
+const botOverlayEl = document.getElementById('bot-overlay');
+const botDialogEl = botOverlayEl ? botOverlayEl.querySelector('.bot-dialog') : null;
+const appShellEl = document.querySelector('.app-shell');
+const botCloseBtnEl = document.getElementById('bot-close');
 const enginePlayerColorEl = document.getElementById('engine-player-color');
+const engineModeAdaptiveEl = document.getElementById('engine-mode-adaptive');
+const engineModeNormalEl = document.getElementById('engine-mode-normal');
 const engineEloEl = document.getElementById('engine-elo');
+const engineEloWrapEl = engineEloEl ? engineEloEl.closest('.elo-slider-wrap') : null;
 const engineEloValueEl = document.getElementById('engine-elo-value');
 const engineCalibrationTextEl = document.getElementById('engine-calibration-text');
+const engineAdaptiveNoteEl = document.getElementById('engine-adaptive-note');
 const engineStatusEl = document.getElementById('engine-status');
 const startStockfishBtnEl = document.getElementById('btn-start-stockfish');
-const analyzeAllBtnEl = document.getElementById('btn-analyze-all');
-const clearAnalysisBtnEl = document.getElementById('btn-clear-analysis');
 const analysisSummaryEl = document.getElementById('analysis-summary');
 const analysisListEl = document.getElementById('analysis-list');
 const arenaCleanerEl = document.getElementById('arena-cleaner');
@@ -94,6 +91,7 @@ const evalFillBlackEl = document.getElementById('eval-fill-black');
 const evalFillWhiteEl = document.getElementById('eval-fill-white');
 const evalReadoutEl = document.getElementById('eval-readout');
 const evalColumnEl = document.querySelector('.eval-column');
+let botLastFocusedEl = null;
 
 const PROMOTION_ROLES = ['queen', 'rook', 'bishop', 'knight'];
 const PROMOTION_TEXT = {
@@ -143,7 +141,6 @@ const state = {
   gameId: null,
   channel: null,
   saveTimer: null,
-  settingsTimer: null,
   analysisTimer: null,
   supportsExtendedSettings: true,
   syncingRemote: false,
@@ -156,6 +153,7 @@ const state = {
     enabled: false,
     side: 'black',
     elo: ENGINE_DEFAULT_ELO,
+    adaptive: true,
     calibrationGames: 0,
     calibrationTarget: ENGINE_CALIBRATION_GAMES,
     resultHandled: false,
@@ -317,6 +315,107 @@ function setEngineStatus(message, kind = '') {
   if (kind) engineStatusEl.classList.add(kind);
 }
 
+function isBotModalOpen() {
+  return Boolean(botOverlayEl?.classList.contains('open'));
+}
+
+function setAppShellInert(inert) {
+  if (!appShellEl) return;
+
+  appShellEl.classList.toggle('app-shell-inert', inert);
+  if (inert) appShellEl.setAttribute('aria-hidden', 'true');
+  else appShellEl.removeAttribute('aria-hidden');
+
+  if ('inert' in appShellEl) {
+    appShellEl.inert = inert;
+  }
+}
+
+function botModalFocusableElements() {
+  if (!botDialogEl) return [];
+
+  const selector = [
+    'a[href]',
+    'button:not([disabled])',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(',');
+
+  return Array.from(botDialogEl.querySelectorAll(selector)).filter(element => {
+    if (!(element instanceof HTMLElement)) return false;
+    return element.offsetParent !== null || element === document.activeElement;
+  });
+}
+
+function focusBotModalStart() {
+  const focusable = botModalFocusableElements();
+  const target = focusable[0] || botDialogEl;
+  if (target && typeof target.focus === 'function') {
+    target.focus();
+  }
+}
+
+function trapBotModalTab(event) {
+  if (event.key !== 'Tab' || !isBotModalOpen() || !botDialogEl) return;
+
+  const focusable = botModalFocusableElements();
+  if (!focusable.length) {
+    event.preventDefault();
+    botDialogEl.focus();
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement;
+  const activeInside = active instanceof HTMLElement && botDialogEl.contains(active);
+
+  if (event.shiftKey) {
+    if (active === first || !activeInside) {
+      event.preventDefault();
+      last.focus();
+    }
+    return;
+  }
+
+  if (active === last || !activeInside) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function openBotModal() {
+  if (!botOverlayEl) return;
+  botLastFocusedEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  renderEngineControls();
+  setAppShellInert(true);
+  document.body.classList.add('modal-open');
+  botOverlayEl.classList.add('open');
+  botOverlayEl.setAttribute('aria-hidden', 'false');
+  if (botDialogEl && !botDialogEl.hasAttribute('tabindex')) {
+    botDialogEl.setAttribute('tabindex', '-1');
+  }
+  requestAnimationFrame(focusBotModalStart);
+}
+
+function closeBotModal() {
+  if (!botOverlayEl) return;
+  botOverlayEl.classList.remove('open');
+  botOverlayEl.setAttribute('aria-hidden', 'true');
+  setAppShellInert(false);
+  document.body.classList.remove('modal-open');
+
+  const restoreTarget = botLastFocusedEl && document.contains(botLastFocusedEl)
+    ? botLastFocusedEl
+    : openBotModalBtnEl;
+  botLastFocusedEl = null;
+  if (restoreTarget && typeof restoreTarget.focus === 'function') {
+    restoreTarget.focus();
+  }
+}
+
 function playSound(name) {
   if (!state.soundEnabled) return;
   const audio = sounds[name];
@@ -457,7 +556,7 @@ async function runArenaCleanupAnimation() {
 }
 
 async function startStockfishMatch() {
-  if (state.cleaningArena) return;
+  if (state.cleaningArena) return false;
 
   const shouldCleanArena = boardHasPriorGame();
   if (shouldCleanArena) {
@@ -476,7 +575,7 @@ async function startStockfishMatch() {
     state.engine.enabled = false;
     renderEngineControls();
     saveEnginePreferences();
-    return;
+    return false;
   }
 
   setEngineStatus(
@@ -489,6 +588,8 @@ async function startStockfishMatch() {
   maybeRequestComputerMove().catch(error => {
     setEngineStatus('Engine move failed: ' + error.message, 'error');
   });
+
+  return true;
 }
 
 function renderStatus() {
@@ -564,40 +665,62 @@ function renderCaptured() {
   scoreBlackEl.textContent = diff < 0 ? `Material edge: +${Math.abs(diff)}` : '';
 }
 
+function updateEloSliderBadge() {
+  if (!engineEloEl || !engineEloValueEl) return;
+
+  const value = clamp(Number(engineEloEl.value) || ENGINE_DEFAULT_ELO, ENGINE_MIN_ELO, ENGINE_MAX_ELO);
+  engineEloValueEl.textContent = String(value);
+
+  const ratio = (value - ENGINE_MIN_ELO) / (ENGINE_MAX_ELO - ENGINE_MIN_ELO);
+  if (engineEloWrapEl) {
+    engineEloWrapEl.style.setProperty('--elo-slider-pct', (ratio * 100).toFixed(2) + '%');
+  }
+}
+
 function renderEngineControls() {
-  if (!engineEnabledEl) return;
+  if (!enginePlayerColorEl || !engineEloEl) return;
 
-  const matchFinished = isMatchFinished();
+  const adaptive = state.engine.adaptive;
 
-  engineEnabledEl.checked = state.engine.enabled;
   enginePlayerColorEl.value = engineHumanColor();
   engineEloEl.value = String(state.engine.elo);
-  engineEloValueEl.textContent = String(state.engine.elo);
+  engineEloEl.disabled = adaptive || state.cleaningArena || state.engine.busy;
 
-  if (analyzeAllBtnEl) {
-    analyzeAllBtnEl.disabled = !matchFinished || !state.moves.length || state.analysis.running || state.cleaningArena;
+  if (engineModeAdaptiveEl) engineModeAdaptiveEl.checked = adaptive;
+  if (engineModeNormalEl) engineModeNormalEl.checked = !adaptive;
+
+  updateEloSliderBadge();
+
+  const played = state.engine.calibrationGames;
+  const target = state.engine.calibrationTarget;
+
+  if (engineCalibrationTextEl) {
+    if (adaptive && played < target) {
+      engineCalibrationTextEl.textContent = 'Calibration: ' + played + '/' + target + ' games';
+    } else if (adaptive) {
+      engineCalibrationTextEl.textContent = 'Adaptive calibrated (' + played + ' games)';
+    } else {
+      engineCalibrationTextEl.textContent = 'Manual mode active. Calibration is optional.';
+    }
   }
 
-  if (clearAnalysisBtnEl) {
-    clearAnalysisBtnEl.disabled =
-      state.analysis.running ||
-      (!state.analysis.entries.length && !state.analysis.summary) ||
-      state.cleaningArena;
+  if (engineAdaptiveNoteEl) {
+    if (adaptive) {
+      engineAdaptiveNoteEl.textContent =
+        'Adaptive mode is active. Manual ELO is locked until you switch to normal mode.';
+      engineAdaptiveNoteEl.classList.add('locked');
+    } else {
+      engineAdaptiveNoteEl.textContent =
+        'Normal mode is active. Use the slider to set the Stockfish ELO manually.';
+      engineAdaptiveNoteEl.classList.remove('locked');
+    }
   }
 
   if (startStockfishBtnEl) {
     startStockfishBtnEl.disabled = state.cleaningArena || state.engine.busy;
     startStockfishBtnEl.textContent = boardHasPriorGame()
       ? 'Clean Arena & Start Match'
-      : 'Start Stockfish Match';
-  }
-
-  const played = state.engine.calibrationGames;
-  const target = state.engine.calibrationTarget;
-  if (played < target) {
-    engineCalibrationTextEl.textContent = 'Calibration: ' + played + '/' + target + ' games';
-  } else {
-    engineCalibrationTextEl.textContent = 'Calibrated (' + played + ' games)';
+      : 'Start';
   }
 }
 
@@ -983,9 +1106,9 @@ function saveEnginePreferences() {
   if (!state.player) return;
 
   const payload = {
-    enabled: state.engine.enabled,
     side: state.engine.side,
     elo: state.engine.elo,
+    adaptive: state.engine.adaptive,
     calibrationGames: state.engine.calibrationGames,
   };
 
@@ -1004,14 +1127,18 @@ function loadEnginePreferences() {
     if (!raw) return;
 
     const parsed = JSON.parse(raw);
-    state.engine.enabled = Boolean(parsed.enabled);
     state.engine.side = parsed.side === 'white' ? 'white' : 'black';
     state.engine.elo = clamp(Number(parsed.elo) || ENGINE_DEFAULT_ELO, ENGINE_MIN_ELO, ENGINE_MAX_ELO);
+    state.engine.adaptive = parsed.adaptive !== false;
     state.engine.calibrationGames = clamp(
       Number(parsed.calibrationGames) || 0,
       0,
       state.engine.calibrationTarget,
     );
+
+    // Bot matches are always started explicitly from the popup.
+    state.engine.enabled = false;
+    state.engine.busy = false;
   } catch {
     // no-op
   }
@@ -1551,6 +1678,8 @@ async function analyzeAllMoves() {
 function queueAutoAnalysis() {
   if (state.analysisTimer) clearTimeout(state.analysisTimer);
 
+  if (!analysisSummaryEl || !analysisListEl) return;
+
   if (!state.moves.length) {
     resetAnalysisState(true);
     return;
@@ -1577,6 +1706,11 @@ function playOutcomeSound(info, capture) {
 }
 
 function adjustEngineEloFromResult(result) {
+  if (!state.engine.adaptive) {
+    setEngineStatus('Result ' + result + '. Manual mode keeps ELO at ' + state.engine.elo + '.', 'ok');
+    return;
+  }
+
   const calibrating = state.engine.calibrationGames < state.engine.calibrationTarget;
 
   let delta = 0;
@@ -1858,107 +1992,8 @@ function gamePayload(title = 'Cloud Chess Game') {
   };
 }
 
-async function saveUserSettings() {
-  if (!state.supabase || !state.player) return;
-
-  const basePayload = {
-    profile_id: state.player.playerId,
-    owner_token: state.player.playerToken,
-    piece_style: state.pieceStyle,
-    board_style: state.boardStyle,
-    sound_enabled: state.soundEnabled,
-    auto_sync_enabled: state.autoSyncEnabled,
-  };
-
-  if (state.supportsExtendedSettings) {
-    const fullPayload = {
-      ...basePayload,
-      theme_mode: state.themeMode,
-      auto_flip_human: state.autoFlipHuman,
-    };
-
-    const { error } = await state.supabase
-      .from('user_settings')
-      .upsert(fullPayload, { onConflict: 'profile_id' });
-
-    if (!error) return;
-
-    const message = (error.message || '').toLowerCase();
-    if (!message.includes('theme_mode') && !message.includes('auto_flip_human')) {
-      setCloudStatus(`Settings save failed: ${error.message}`, 'error');
-      return;
-    }
-
-    state.supportsExtendedSettings = false;
-  }
-
-  const { error: baseError } = await state.supabase
-    .from('user_settings')
-    .upsert(basePayload, { onConflict: 'profile_id' });
-
-  if (baseError) {
-    setCloudStatus(`Settings save failed: ${baseError.message}`, 'error');
-  }
-}
-function queueSettingsSave() {
-  if (state.settingsTimer) clearTimeout(state.settingsTimer);
-  state.settingsTimer = setTimeout(() => {
-    saveUserSettings().catch(error => {
-      setCloudStatus(`Settings save failed: ${error.message}`, 'error');
-    });
-  }, 250);
-}
-
 async function fetchRecentGames() {
-  if (!recentGamesEl) return;
-  if (!state.supabase || !state.player) return;
-
-  const { data, error } = await state.supabase
-    .from('chess_games')
-    .select('id,title,updated_at,status,result')
-    .eq('owner_profile_id', state.player.playerId)
-    .order('updated_at', { ascending: false })
-    .limit(8);
-
-  if (error) {
-    setCloudStatus(`Could not list recent games: ${error.message}`, 'error');
-    return;
-  }
-
-  recentGamesEl.innerHTML = '';
-
-  if (!data.length) {
-    recentGamesEl.textContent = 'No cloud games yet.';
-    return;
-  }
-
-  for (const game of data) {
-    const item = document.createElement('div');
-    item.className = 'recent-item';
-
-    const title = document.createElement('div');
-    title.className = 'recent-item-title';
-    title.textContent = game.title || game.id;
-
-    const meta = document.createElement('div');
-    meta.className = 'recent-item-meta';
-    const updated = new Date(game.updated_at).toLocaleString();
-    meta.innerHTML = `<span>${game.status}</span><span>${updated}</span>`;
-
-    const loadBtn = document.createElement('button');
-    loadBtn.className = 'btn';
-    loadBtn.type = 'button';
-    loadBtn.textContent = 'Load';
-    loadBtn.addEventListener('click', () => {
-      if (cloudGameIdEl) cloudGameIdEl.value = game.id;
-      loadCloudGameById(game.id).catch(error => {
-        setCloudStatus('Load failed: ' + error.message, 'error');
-      });
-    });
-
-    item.append(title, meta, loadBtn);
-    recentGamesEl.appendChild(item);
-  }
+  // Recent game listing is managed on settings.html.
 }
 async function removeSubscription() {
   if (state.channel && state.supabase) {
@@ -2043,7 +2078,6 @@ async function createCloudGame() {
   }
 
   state.gameId = data.id;
-  if (cloudGameIdEl) cloudGameIdEl.value = data.id;
 
   try {
     localStorage.setItem(activeGameStorageKey(), data.id);
@@ -2125,7 +2159,6 @@ async function loadCloudGameById(id, options = {}) {
 
   if (error) {
     state.gameId = null;
-    if (cloudGameIdEl) cloudGameIdEl.value = '';
     try {
       localStorage.removeItem(activeGameStorageKey());
     } catch {
@@ -2137,7 +2170,6 @@ async function loadCloudGameById(id, options = {}) {
   }
 
   state.gameId = gameId;
-  if (cloudGameIdEl) cloudGameIdEl.value = gameId;
 
   try {
     localStorage.setItem(activeGameStorageKey(), gameId);
@@ -2154,26 +2186,6 @@ async function loadCloudGameById(id, options = {}) {
   }
 }
 
-async function loadCloudGame() {
-  if (!state.supabase || !state.player) return;
-
-  const id = cloudGameIdEl ? cloudGameIdEl.value.trim() : (state.gameId || '').trim();
-  await loadCloudGameById(id);
-}
-
-async function copyCurrentGameId() {
-  if (!state.gameId) {
-    setCloudStatus('No cloud game ID to copy.', 'error');
-    return;
-  }
-
-  try {
-    await navigator.clipboard.writeText(state.gameId);
-    setCloudStatus('Cloud game ID copied to clipboard.', 'ok');
-  } catch {
-    setCloudStatus('Could not copy game ID in this browser context.', 'error');
-  }
-}
 async function loadProfileAndSettings() {
   const { data: profileRow, error: profileError } = await state.supabase
     .from('profiles')
@@ -2238,13 +2250,6 @@ async function loadProfileAndSettings() {
   if (localThemeMode) state.themeMode = localThemeMode;
   if (localAutoFlipHuman != null) state.autoFlipHuman = localAutoFlipHuman;
 
-  if (pieceStyleEl) pieceStyleEl.value = state.pieceStyle;
-  if (boardStyleEl) boardStyleEl.value = state.boardStyle;
-  if (soundEnabledEl) soundEnabledEl.checked = state.soundEnabled;
-  if (autoSyncEnabledEl) autoSyncEnabledEl.checked = state.autoSyncEnabled;
-  if (themeModeEl) themeModeEl.value = state.themeMode;
-  if (autoFlipHumanEl) autoFlipHumanEl.checked = state.autoFlipHuman;
-
   persistLocalPreferences();
   applyTheme();
 }
@@ -2258,40 +2263,45 @@ function wireUi() {
   const clearHistoryBtn = document.getElementById('btn-clear-history');
   if (clearHistoryBtn) clearHistoryBtn.addEventListener('click', clearGameLog);
 
-  const createCloudBtn = document.getElementById('btn-create-cloud');
-  if (createCloudBtn) createCloudBtn.addEventListener('click', createCloudGame);
-
-  const saveCloudBtn = document.getElementById('btn-save-cloud');
-  if (saveCloudBtn) saveCloudBtn.addEventListener('click', () => saveCloudGame(true));
-
-  const loadCloudBtn = document.getElementById('btn-load-cloud');
-  if (loadCloudBtn) loadCloudBtn.addEventListener('click', loadCloudGame);
-
-  const copyCloudBtn = document.getElementById('btn-copy-id');
-  if (copyCloudBtn) copyCloudBtn.addEventListener('click', copyCurrentGameId);
-
-  if (analyzeAllBtnEl) {
-    analyzeAllBtnEl.addEventListener('click', () => {
-      analyzeAllMoves().catch(error => {
-        setEngineStatus('Analysis failed: ' + error.message, 'error');
-      });
-    });
-  }
-
-  if (clearAnalysisBtnEl) {
-    clearAnalysisBtnEl.addEventListener('click', () => {
-      resetAnalysisState(true);
-      setEngineStatus('Analysis cleared.', '');
-    });
-  }
-
   if (startStockfishBtnEl) {
     startStockfishBtnEl.addEventListener('click', () => {
-      startStockfishMatch().catch(error => {
-        setEngineStatus('Stockfish start failed: ' + error.message, 'error');
-      });
+      startStockfishMatch()
+        .then(started => {
+          if (started) closeBotModal();
+        })
+        .catch(error => {
+          setEngineStatus('Stockfish start failed: ' + error.message, 'error');
+        });
     });
   }
+
+  if (openBotModalBtnEl) {
+    openBotModalBtnEl.addEventListener('click', openBotModal);
+  }
+
+  if (botCloseBtnEl) {
+    botCloseBtnEl.addEventListener('click', closeBotModal);
+  }
+
+  if (botOverlayEl) {
+    botOverlayEl.addEventListener('click', event => {
+      if (event.target === botOverlayEl) closeBotModal();
+    });
+  }
+
+  window.addEventListener('keydown', event => {
+    if (!isBotModalOpen()) return;
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeBotModal();
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      trapBotModalTab(event);
+    }
+  });
 
   const logoutBtn = document.getElementById('btn-logout');
   if (logoutBtn) {
@@ -2301,71 +2311,23 @@ function wireUi() {
     });
   }
 
-  if (pieceStyleEl) {
-    pieceStyleEl.addEventListener('change', () => {
-      state.pieceStyle = pieceStyleEl.value;
-      applyTheme();
-      refreshBoard();
-      queueSettingsSave();
-    });
-  }
-
-  if (boardStyleEl) {
-    boardStyleEl.addEventListener('change', () => {
-      state.boardStyle = boardStyleEl.value;
-      applyTheme();
-      queueSettingsSave();
-    });
-  }
-
-  if (soundEnabledEl) {
-    soundEnabledEl.addEventListener('change', () => {
-      state.soundEnabled = soundEnabledEl.checked;
-      queueSettingsSave();
-    });
-  }
-
-  if (autoSyncEnabledEl) {
-    autoSyncEnabledEl.addEventListener('change', () => {
-      state.autoSyncEnabled = autoSyncEnabledEl.checked;
-      queueSettingsSave();
-    });
-  }
-
-  if (themeModeEl) {
-    themeModeEl.addEventListener('change', () => {
-      state.themeMode = normalizeThemeMode(themeModeEl.value);
-      persistLocalPreferences();
-      applyTheme();
-      queueSettingsSave();
-    });
-  }
-
-  if (autoFlipHumanEl) {
-    autoFlipHumanEl.addEventListener('change', () => {
-      state.autoFlipHuman = autoFlipHumanEl.checked;
-      persistLocalPreferences();
-      refreshUi();
-      queueSettingsSave();
-    });
-  }
-
-  if (engineEnabledEl) {
-    engineEnabledEl.addEventListener('change', () => {
-      state.engine.enabled = engineEnabledEl.checked;
-      state.engine.resultHandled = false;
+  if (engineModeAdaptiveEl) {
+    engineModeAdaptiveEl.addEventListener('change', () => {
+      if (!engineModeAdaptiveEl.checked) return;
+      state.engine.adaptive = true;
       renderEngineControls();
       saveEnginePreferences();
+      setEngineStatus('Adaptive ELO enabled. Manual slider is locked.', 'ok');
+    });
+  }
 
-      if (!state.engine.enabled) {
-        cancelEngineSearch('Computer mode disabled');
-        setEngineStatus('Computer mode disabled.', '');
-        refreshBoard();
-        return;
-      }
-
-      setEngineStatus('Computer mode enabled. Press Start Stockfish Match.', 'ok');
-      refreshBoard();
+  if (engineModeNormalEl) {
+    engineModeNormalEl.addEventListener('change', () => {
+      if (!engineModeNormalEl.checked) return;
+      state.engine.adaptive = false;
+      renderEngineControls();
+      saveEnginePreferences();
+      setEngineStatus('Normal mode enabled. Set the ELO using the slider.', 'ok');
     });
   }
 
@@ -2382,6 +2344,11 @@ function wireUi() {
 
   if (engineEloEl) {
     engineEloEl.addEventListener('input', () => {
+      if (state.engine.adaptive) {
+        renderEngineControls();
+        return;
+      }
+
       state.engine.elo = clamp(Number(engineEloEl.value) || ENGINE_DEFAULT_ELO, ENGINE_MIN_ELO, ENGINE_MAX_ELO);
       renderEngineControls();
       saveEnginePreferences();
@@ -2389,6 +2356,10 @@ function wireUi() {
     });
 
     engineEloEl.addEventListener('change', () => {
+      if (state.engine.adaptive) {
+        setEngineStatus('Switch to normal mode to change ELO manually.', 'warn');
+        return;
+      }
       setEngineStatus('Stockfish strength set to ELO ' + state.engine.elo + '.', 'ok');
     });
   }
@@ -2480,9 +2451,9 @@ async function boot() {
   }
 
   if (state.engine.enabled) {
-    setEngineStatus('Computer mode enabled. Press Start Stockfish Match.', 'ok');
+    setEngineStatus('Bot mode active. Open Play with Bot to configure a new match.', 'ok');
   } else {
-    setEngineStatus('Engine idle.', '');
+    setEngineStatus('Engine idle. Open Play with Bot to begin.', '');
   }
 }
 window.addEventListener('beforeunload', () => {
@@ -2517,6 +2488,21 @@ window.addEventListener('beforeunload', () => {
 });
 
 boot();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

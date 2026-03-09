@@ -35,10 +35,53 @@ function toHex(bytes) {
     .join('');
 }
 
-async function hashPassword(password) {
+async function hashLegacyPassword(password) {
   const data = new TextEncoder().encode(password);
   const digest = await crypto.subtle.digest('SHA-256', data);
   return toHex(new Uint8Array(digest));
+}
+
+function shouldFallbackLegacyPasswordRpc(error, functionName) {
+  const code = String(error?.code || '').toUpperCase();
+  const message = String(error?.message || '').toLowerCase();
+  if (code === 'PGRST202' || code === '42883') return true;
+  return message.includes(functionName) && message.includes('does not exist');
+}
+
+async function createPlayerRpc(supabase, username, displayName, password) {
+  const modern = await supabase.rpc('create_player', {
+    p_username: username,
+    p_display_name: displayName,
+    p_password: password,
+  });
+
+  if (!modern.error || !shouldFallbackLegacyPasswordRpc(modern.error, 'create_player')) {
+    return modern;
+  }
+
+  const passwordHash = await hashLegacyPassword(password);
+  return supabase.rpc('create_player', {
+    p_username: username,
+    p_display_name: displayName,
+    p_password_hash: passwordHash,
+  });
+}
+
+async function loginPlayerRpc(supabase, username, password) {
+  const modern = await supabase.rpc('login_player', {
+    p_username: username,
+    p_password: password,
+  });
+
+  if (!modern.error || !shouldFallbackLegacyPasswordRpc(modern.error, 'login_player')) {
+    return modern;
+  }
+
+  const passwordHash = await hashLegacyPassword(password);
+  return supabase.rpc('login_player', {
+    p_username: username,
+    p_password_hash: passwordHash,
+  });
 }
 
 function saveSessionFromPayload(payload) {
@@ -54,13 +97,9 @@ async function handleSignup() {
   const supabase = getSupabaseClient();
   const username = usernameEl.value.trim().toLowerCase();
   const displayName = displayNameEl.value.trim();
-  const passwordHash = await hashPassword(passwordEl.value);
+  const password = passwordEl.value;
 
-  const { data, error } = await supabase.rpc('create_player', {
-    p_username: username,
-    p_display_name: displayName,
-    p_password_hash: passwordHash,
-  });
+  const { data, error } = await createPlayerRpc(supabase, username, displayName, password);
 
   if (error) throw error;
   if (!data?.player_id || !data?.player_token) {
@@ -75,12 +114,9 @@ async function handleSignup() {
 async function handleLogin() {
   const supabase = getSupabaseClient();
   const username = usernameEl.value.trim().toLowerCase();
-  const passwordHash = await hashPassword(passwordEl.value);
+  const password = passwordEl.value;
 
-  const { data, error } = await supabase.rpc('login_player', {
-    p_username: username,
-    p_password_hash: passwordHash,
-  });
+  const { data, error } = await loginPlayerRpc(supabase, username, password);
 
   if (error) throw error;
   if (!data?.player_id || !data?.player_token) {
