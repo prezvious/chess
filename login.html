@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login | Cloud Chess Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="./auth.css?v=20260309h" />
+</head>
+<body class="auth-page auth-login">
+  <main class="auth-shell">
+    <section class="auth-visual">
+      <div class="orb orb-a"></div>
+      <div class="orb orb-b"></div>
+      <div class="grid-glow"></div>
+
+      <div class="visual-content">
+        <p class="eyebrow">Cloud Chess Studio</p>
+        <h1>Re-enter the arena.</h1>
+        <p>
+          No Supabase account required. Your player profile and games are stored in one shared Supabase backend.
+        </p>
+      </div>
+
+      <div class="piece-deck">
+        <img src="./assets/pieces/2d/cburnett/wK.svg" alt="White king" />
+        <img src="./assets/pieces/2d/cburnett/bQ.svg" alt="Black queen" />
+        <img src="./assets/pieces/3d/staunton-basic/White-Knight.png" alt="White knight" />
+      </div>
+    </section>
+
+    <section class="auth-form-panel">
+      <div class="brand-row">
+        <h2>Login</h2>
+        <a href="./signup.html?v=20260309h" class="switch-link">Create player</a>
+      </div>
+
+      <p class="panel-note">Login using your in-app chess profile.</p>
+
+      <form id="auth-form" data-mode="login" class="auth-form">
+        <label>
+          Username
+          <input
+            id="username"
+            type="text"
+            autocomplete="username"
+            minlength="3"
+            maxlength="30"
+            pattern="[A-Za-z0-9_\-]+"
+            required
+          />
+        </label>
+
+        <label>
+          Password
+          <input id="password" type="password" autocomplete="current-password" minlength="8" required />
+        </label>
+
+        <div class="project-settings static-box">
+          <p>Connected Supabase:</p>
+          <code id="api-url"></code>
+        </div>
+
+        <button class="auth-btn" type="submit" id="submit-btn">Login</button>
+      </form>
+
+      <div id="auth-message" class="auth-message"></div>
+    </section>
+  </main>
+
+  <script type="module" src="./auth.js?v=20260309b"></script>
+</body>
+</html>

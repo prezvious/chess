@@ -1,0 +1,228 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="description"
+    content="Lichess-inspired chess website using Chessground, chessops, and universal Supabase cloud persistence."
+  />
+  <title>Lichess-Inspired Chess</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/@lichess-org/chessground@10.1.0/assets/chessground.base.css"
+  />
+  <link rel="stylesheet" href="./styles.css?v=20260310b" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <p class="kicker">Lichess Resources + Universal Supabase</p>
+      <h1>Cloud Chess Studio</h1>
+      <p class="hero-sub">
+        Chessground board UI, chessops move legality, Lichess 2D/3D media, and one shared
+        Supabase database for all player data.
+      </p>
+    </header>
+
+    <main class="layout">
+      <section class="board-panel">
+        <div class="status-card" id="status-card">
+          <span class="turn-dot" id="turn-dot"></span>
+          <span id="status-text">Loading board...</span>
+          <span class="sync-pill" id="sync-text">Sync pending</span>
+        </div>
+
+        <div class="board-frame">
+          <div
+            id="chessground"
+            class="cg-wrap board-shell"
+            data-piece-style="2d"
+            data-board-style="brown"
+          ></div>
+          <div class="arena-cleaner" id="arena-cleaner" aria-hidden="true">
+            <div class="arena-cleaner-card">
+              <div class="arena-cleaner-head">
+                <span class="bot-indicator" aria-hidden="true"></span>
+                <strong>Robot Cleaner</strong>
+              </div>
+              <div class="arena-cleaner-track">
+                <div class="arena-cleaner-bar" id="arena-cleaner-bar"></div>
+              </div>
+              <div class="arena-cleaner-text" id="arena-cleaner-text">Preparing arena...</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="captured-wrap">
+          <div class="captured-box">
+            <h3>Captured by White</h3>
+            <div class="captured-list" id="captured-white"></div>
+            <div class="score-row" id="score-white"></div>
+          </div>
+          <div class="captured-box">
+            <h3>Captured by Black</h3>
+            <div class="captured-list" id="captured-black"></div>
+            <div class="score-row" id="score-black"></div>
+          </div>
+        </div>
+
+        <div class="move-panel">
+          <div class="move-header">
+            <h3>Move History</h3>
+            <button class="ghost-btn" id="btn-clear-history" type="button">Clear Log</button>
+          </div>
+          <div class="move-list" id="move-list"></div>
+        </div>
+      </section>
+
+      <aside class="control-panel">
+        <section class="card account-card">
+          <h2>Account</h2>
+          <div class="account-meta">
+            <div>
+              <span class="meta-label">User</span>
+              <strong id="account-username">Loading...</strong>
+            </div>
+            <div>
+              <span class="meta-label">Handle</span>
+              <strong id="account-email">Loading...</strong>
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button class="btn" id="btn-logout" type="button">Logout</button>
+            <a class="btn link-btn" href="./login.html?v=20260309h">Auth Page</a>
+          </div>
+
+          <div class="cloud-status" id="cloud-status">Connecting to Supabase...</div>
+        </section>
+
+        <section class="card">
+          <h2>Board Controls</h2>
+          <div class="button-row">
+            <button class="btn" id="btn-new-game" type="button">New Game</button>
+            <button class="btn" id="btn-undo" type="button">Undo</button>
+            <button class="btn" id="btn-flip" type="button">Flip</button>
+          </div>
+
+          <div class="field-grid">
+            <label>
+              Piece Media
+              <select id="piece-style">
+                <option value="2d">2D (Lichess cburnett)</option>
+                <option value="3d">3D (Lichess staunton)</option>
+              </select>
+            </label>
+            <label>
+              Board Texture
+              <select id="board-style">
+                <option value="brown">Brown</option>
+                <option value="wood">Wood</option>
+                <option value="blue">Blue</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="toggle-row" for="sound-enabled">
+            <input type="checkbox" id="sound-enabled" checked />
+            <span>Enable Lichess move sounds</span>
+          </label>
+
+          <label class="toggle-row" for="auto-sync-enabled">
+            <input type="checkbox" id="auto-sync-enabled" checked />
+            <span>Auto-save to cloud game</span>
+          </label>
+        </section>
+
+        <section class="card">
+          <h2>Computer &amp; Analysis</h2>
+          <label class="toggle-row" for="engine-enabled">
+            <input type="checkbox" id="engine-enabled" />
+            <span>Play vs Stockfish</span>
+          </label>
+
+          <div class="field-grid engine-grid">
+            <label>
+              You Play As
+              <select id="engine-player-color">
+                <option value="white">White</option>
+                <option value="black">Black</option>
+              </select>
+            </label>
+            <label>
+              Stockfish ELO
+              <input id="engine-elo" type="range" min="400" max="2200" step="50" value="900" />
+              <div class="range-meta">
+                <strong id="engine-elo-value">900</strong>
+                <span id="engine-calibration-text">Calibration: 0/5 games</span>
+              </div>
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button class="btn btn-primary" id="btn-start-stockfish" type="button">Start Stockfish Match</button>
+          </div>
+
+          <div class="button-row">
+            <button class="btn" id="btn-analyze-all" type="button">Analyze All Moves</button>
+            <button class="btn" id="btn-clear-analysis" type="button">Clear Analysis</button>
+          </div>
+
+          <div class="engine-status" id="engine-status">Engine idle.</div>
+          <div class="analysis-summary" id="analysis-summary">No analysis yet.</div>
+          <div class="analysis-list" id="analysis-list"></div>
+        </section>
+
+        <section class="card">
+          <h2>Cloud Game</h2>
+          <p class="hint">Only your own games are visible and editable.</p>
+
+          <div class="button-row">
+            <button class="btn btn-primary" id="btn-create-cloud" type="button">Create Cloud Game</button>
+            <button class="btn" id="btn-save-cloud" type="button">Save Snapshot</button>
+          </div>
+
+          <label>
+            Cloud Game ID
+            <input id="cloud-game-id" type="text" placeholder="Paste UUID and load" />
+          </label>
+
+          <div class="button-row">
+            <button class="btn" id="btn-load-cloud" type="button">Load Game</button>
+            <button class="btn" id="btn-copy-id" type="button">Copy ID</button>
+          </div>
+
+          <h3 class="subhead">Recent Cloud Games</h3>
+          <div class="recent-list" id="recent-games"></div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <div class="promotion-overlay" id="promotion-overlay" aria-hidden="true">
+    <div class="promotion-dialog" role="dialog" aria-modal="true" aria-labelledby="promotion-title">
+      <h3 id="promotion-title">Choose Promotion</h3>
+      <p>Select the piece for your pawn.</p>
+      <div class="promotion-grid" id="promotion-grid"></div>
+      <button class="btn ghost-btn" id="promotion-cancel" type="button">Cancel</button>
+    </div>
+  </div>
+
+  <script type="module" src="./app.js?v=20260310f"></script>
+</body>
+</html>
+
+
+
+
+
+
+
+

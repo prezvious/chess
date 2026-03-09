@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign Up | Cloud Chess Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="./auth.css?v=20260309h" />
+</head>
+<body class="auth-page auth-signup">
+  <main class="auth-shell">
+    <section class="auth-visual">
+      <div class="orb orb-a"></div>
+      <div class="orb orb-b"></div>
+      <div class="grid-glow"></div>
+
+      <div class="visual-content">
+        <p class="eyebrow">Create your identity</p>
+        <h1>Build your chess profile.</h1>
+        <p>
+          Create a local player identity for this app. Data syncs into one universal Supabase database.
+        </p>
+      </div>
+
+      <div class="piece-deck">
+        <img src="./assets/pieces/2d/cburnett/wQ.svg" alt="White queen" />
+        <img src="./assets/pieces/2d/cburnett/bK.svg" alt="Black king" />
+        <img src="./assets/pieces/3d/staunton-basic/Black-Bishop.png" alt="Black bishop" />
+      </div>
+    </section>
+
+    <section class="auth-form-panel">
+      <div class="brand-row">
+        <h2>Sign Up</h2>
+        <a href="./login.html?v=20260309h" class="switch-link">Back to login</a>
+      </div>
+
+      <p class="panel-note">Create an app profile. No Supabase account required.</p>
+
+      <form id="auth-form" data-mode="signup" class="auth-form">
+        <label>
+          Username
+          <input
+            id="username"
+            type="text"
+            autocomplete="username"
+            minlength="3"
+            maxlength="30"
+            pattern="[A-Za-z0-9_\-]+"
+            required
+          />
+        </label>
+
+        <label>
+          Display name
+          <input id="display-name" type="text" autocomplete="name" minlength="2" maxlength="50" required />
+        </label>
+
+        <label>
+          Password
+          <input id="password" type="password" autocomplete="new-password" minlength="8" required />
+        </label>
+
+        <div class="project-settings static-box">
+          <p>Connected Supabase:</p>
+          <code id="api-url"></code>
+        </div>
+
+        <button class="auth-btn" type="submit" id="submit-btn">Create player</button>
+      </form>
+
+      <div id="auth-message" class="auth-message"></div>
+    </section>
+  </main>
+
+  <script type="module" src="./auth.js?v=20260309b"></script>
+</body>
+</html>
