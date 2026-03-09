@@ -13,7 +13,7 @@ Users create an in-app player profile (username/password), and all data is store
 ## Fixed Supabase project
 
 - API URL: `https://zunmeiakbtqlhssjkelt.supabase.co`
-- Publishable anon key: configured in [`supabase-client.js`](C:/Users/prezv/Documents/Coding/chess/supabase-client.js)
+- Publishable anon key: configured in [`supabase-client.js`](C:/Users/prezv/Documents/Coding/chess/v3/supabase-client.js)
 
 ## Files
 
@@ -48,5 +48,5 @@ RLS is scoped by an `x-player-token` request header managed by the app.
 ## Notes
 
 - `supabase.sql` drops old auth-based tables for a clean migration.
-- Promotion is auto-queen by default.
+- Human promotions use the in-app selection dialog; engine promotions default to queen.
 - Supabase Auth providers are not required for this flow.

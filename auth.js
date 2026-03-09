@@ -24,8 +24,10 @@ function authNextPath() {
 }
 
 function setMessage(text, kind = '') {
+  if (!messageEl) return;
   messageEl.textContent = text;
   messageEl.className = 'auth-message';
+  messageEl.setAttribute('aria-live', kind === 'error' ? 'assertive' : 'polite');
   if (kind) messageEl.classList.add(kind);
 }
 

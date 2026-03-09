@@ -42,6 +42,8 @@ const ENGINE_DEFAULT_ELO = 900;
 const ENGINE_CALIBRATION_GAMES = 5;
 const ENGINE_ANALYSIS_DEPTH = 12;
 const LIVE_EVAL_DEPTH = 10;
+const ANALYSIS_TIMEOUT_MS = 18000;
+const LIVE_EVAL_TIMEOUT_MS = 10000;
 const STOCKFISH_WORKER_PATH = './stockfish-worker.js?v=20260310g';
 const THEME_MODE_KEY = 'cloud-chess-theme-mode-v1';
 const AUTO_FLIP_HUMAN_KEY = 'cloud-chess-auto-flip-human-v1';
@@ -92,6 +94,7 @@ const evalFillWhiteEl = document.getElementById('eval-fill-white');
 const evalReadoutEl = document.getElementById('eval-readout');
 const evalColumnEl = document.querySelector('.eval-column');
 let botLastFocusedEl = null;
+let promotionLastFocusedEl = null;
 
 const PROMOTION_ROLES = ['queen', 'rook', 'bishop', 'knight'];
 const PROMOTION_TEXT = {
@@ -475,6 +478,22 @@ function gameStatus() {
     };
   }
 
+  if (isThreefoldRepetitionNow()) {
+    return {
+      code: 'draw',
+      result: 'draw',
+      text: 'Draw by threefold repetition.',
+    };
+  }
+
+  if (isFiftyMoveRuleNow()) {
+    return {
+      code: 'draw',
+      result: 'draw',
+      text: 'Draw by 50-move rule.',
+    };
+  }
+
   if (state.position.isCheck()) {
     return {
       code: 'check',
@@ -495,6 +514,38 @@ function mapStatusCode(code) {
   if (code === 'stalemate') return 'stalemate';
   if (code === 'draw') return 'draw';
   return 'ongoing';
+}
+
+function fenKeyForRepetition(fenText) {
+  const parts = String(fenText || '').trim().split(/\s+/);
+  if (parts.length < 4) return '';
+  return parts.slice(0, 4).join(' ');
+}
+
+function isThreefoldRepetitionNow() {
+  const currentKey = fenKeyForRepetition(currentFen());
+  if (!currentKey) return false;
+
+  const counts = new Map();
+  const addFen = fenText => {
+    const key = fenKeyForRepetition(fenText);
+    if (!key) return;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  };
+
+  addFen(INITIAL_FEN);
+  for (const move of state.moves) {
+    addFen(move?.fen);
+  }
+
+  return (counts.get(currentKey) || 0) >= 3;
+}
+
+function isFiftyMoveRuleNow() {
+  const fields = currentFen().trim().split(/\s+/);
+  if (fields.length < 5) return false;
+  const halfmoves = Number(fields[4]);
+  return Number.isFinite(halfmoves) && halfmoves >= 100;
 }
 
 function isMatchFinished() {
@@ -1027,9 +1078,83 @@ function choosePromotion(color) {
       return;
     }
 
+    const promotionDialog = promotionOverlayEl.querySelector('.promotion-dialog');
+    promotionLastFocusedEl = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+
+    setAppShellInert(true);
+    document.body.classList.add('modal-open');
     promotionGridEl.innerHTML = '';
     promotionOverlayEl.classList.add('open');
     promotionOverlayEl.setAttribute('aria-hidden', 'false');
+    if (promotionDialog && !promotionDialog.hasAttribute('tabindex')) {
+      promotionDialog.setAttribute('tabindex', '-1');
+    }
+
+    const getFocusable = () => {
+      if (!promotionDialog) return [];
+      const selector = [
+        'a[href]',
+        'button:not([disabled])',
+        'input:not([disabled])',
+        'select:not([disabled])',
+        'textarea:not([disabled])',
+        '[tabindex]:not([tabindex="-1"])',
+      ].join(',');
+      return Array.from(promotionDialog.querySelectorAll(selector)).filter(element => {
+        if (!(element instanceof HTMLElement)) return false;
+        return element.offsetParent !== null || element === document.activeElement;
+      });
+    };
+
+    const focusStart = () => {
+      const focusable = getFocusable();
+      const target = focusable[0] || promotionDialog;
+      if (target && typeof target.focus === 'function') {
+        target.focus();
+      }
+    };
+
+    const restoreFocus = () => {
+      const fallback = boardShell;
+      const target = promotionLastFocusedEl && document.contains(promotionLastFocusedEl)
+        ? promotionLastFocusedEl
+        : fallback;
+      promotionLastFocusedEl = null;
+      if (target && typeof target.focus === 'function') {
+        target.focus();
+      }
+    };
+
+    const trapTab = event => {
+      if (event.key !== 'Tab' || !promotionDialog) return;
+      const focusable = getFocusable();
+      if (!focusable.length) {
+        event.preventDefault();
+        promotionDialog.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      const activeInside = active instanceof HTMLElement && promotionDialog.contains(active);
+
+      if (event.shiftKey) {
+        if (active === first || !activeInside) {
+          event.preventDefault();
+          last.focus();
+        }
+        return;
+      }
+
+      if (active === last || !activeInside) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
     let settled = false;
     const fallbackTimer = window.setTimeout(() => {
       if (settled) return;
@@ -1044,25 +1169,46 @@ function choosePromotion(color) {
       promotionGridEl.innerHTML = '';
       promotionCancelEl.onclick = null;
       promotionOverlayEl.onclick = null;
-      window.removeEventListener('keydown', onEscape);
-      window.removeEventListener('keydown', onHotkeys);
+      window.removeEventListener('keydown', onKeydown);
       window.clearTimeout(fallbackTimer);
+      if (!isBotModalOpen()) {
+        setAppShellInert(false);
+        document.body.classList.remove('modal-open');
+      }
+      restoreFocus();
       resolve(selection);
     };
 
-    const onEscape = event => {
-      if (event.key === 'Escape') finish(null);
-    };
-    const onHotkeys = event => {
+    const onKeydown = event => {
+      if (event.key === 'Tab') {
+        trapTab(event);
+        return;
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        finish(null);
+        return;
+      }
+
       const key = event.key.toLowerCase();
-      if (key === 'q') finish('queen');
-      else if (key === 'r') finish('rook');
-      else if (key === 'b') finish('bishop');
-      else if (key === 'n') finish('knight');
+      if (key === 'q') {
+        event.preventDefault();
+        finish('queen');
+      } else if (key === 'r') {
+        event.preventDefault();
+        finish('rook');
+      } else if (key === 'b') {
+        event.preventDefault();
+        finish('bishop');
+      } else if (key === 'n') {
+        event.preventDefault();
+        finish('knight');
+      }
     };
 
-    window.addEventListener('keydown', onEscape);
-    window.addEventListener('keydown', onHotkeys);
+    window.addEventListener('keydown', onKeydown);
+    requestAnimationFrame(focusStart);
 
     promotionCancelEl.onclick = () => finish(null);
     promotionOverlayEl.onclick = event => {
@@ -1427,7 +1573,7 @@ async function requestEngineBestMove(fenText) {
   });
 }
 
-function requestPositionAnalysis(fenText, depth) {
+function requestPositionAnalysis(fenText, depth, options = {}) {
   if (!state.analysis.worker || !state.analysis.ready) {
     return Promise.reject(new Error('Stockfish analysis engine is not available.'));
   }
@@ -1436,15 +1582,60 @@ function requestPositionAnalysis(fenText, depth) {
     return Promise.reject(new Error('Analysis request overlap detected.'));
   }
 
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || ANALYSIS_TIMEOUT_MS);
+
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeoutId = null;
+
+    const safeResolve = value => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      resolve(value);
+    };
+
+    const safeReject = error => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      reject(error);
+    };
+
     state.analysis.pending = {
-      resolve,
-      reject,
+      resolve: safeResolve,
+      reject: safeReject,
       bestInfo: null,
     };
 
-    state.analysis.worker.postMessage('position fen ' + fenText);
-    state.analysis.worker.postMessage('go depth ' + depth);
+    timeoutId = setTimeout(() => {
+      const pending = state.analysis.pending;
+      if (pending && pending.resolve === safeResolve) {
+        state.analysis.pending = null;
+        try {
+          state.analysis.worker.postMessage('stop');
+        } catch {
+          // no-op
+        }
+      }
+      safeReject(new Error('Position analysis timeout after ' + timeoutMs + 'ms'));
+    }, timeoutMs);
+
+    try {
+      state.analysis.worker.postMessage('position fen ' + fenText);
+      state.analysis.worker.postMessage('go depth ' + depth);
+    } catch (error) {
+      if (state.analysis.pending && state.analysis.pending.resolve === safeResolve) {
+        state.analysis.pending = null;
+      }
+      safeReject(error instanceof Error ? error : new Error(String(error)));
+    }
   });
 }
 
@@ -1530,7 +1721,9 @@ async function updateLiveEvaluation(fenText) {
   state.liveEval.token = token;
 
   try {
-    const result = await requestPositionAnalysis(fenText, LIVE_EVAL_DEPTH);
+    const result = await requestPositionAnalysis(fenText, LIVE_EVAL_DEPTH, {
+      timeoutMs: LIVE_EVAL_TIMEOUT_MS,
+    });
     if (token !== state.liveEval.token || fenText !== state.liveEval.pendingFen) return;
 
     const turnToken = fenText.trim().split(/\s+/)[1];
@@ -1610,7 +1803,9 @@ async function analyzeAllMoves() {
 
       setEngineStatus('Analyzing move ' + (i + 1) + '/' + state.moves.length + '...', 'warn');
 
-      const best = await requestPositionAnalysis(beforeFen, state.analysis.depth);
+      const best = await requestPositionAnalysis(beforeFen, state.analysis.depth, {
+        timeoutMs: ANALYSIS_TIMEOUT_MS,
+      });
       if (token !== state.analysis.token) return;
 
       let bestSan = '--';
@@ -1631,7 +1826,9 @@ async function analyzeAllMoves() {
 
       replay.play(normalized);
       const afterFen = makeFen(replay.toSetup());
-      const after = await requestPositionAnalysis(afterFen, state.analysis.depth);
+      const after = await requestPositionAnalysis(afterFen, state.analysis.depth, {
+        timeoutMs: ANALYSIS_TIMEOUT_MS,
+      });
       if (token !== state.analysis.token) return;
 
       const playedMoverCp = -scoreToCentipawns(after.score);
@@ -1827,18 +2024,13 @@ function applyLegalMove(move, source = 'human') {
 }
 
 function clearGameLog() {
-  cancelEngineSearch('Clearing game log');
-  resetAnalysisState(false);
-
-  state.moves = [];
-  state.capturedByWhite = [];
-  state.capturedByBlack = [];
-  state.history = [];
-  state.lastMoveUci = null;
-  state.engine.resultHandled = false;
-  refreshUi();
-
-  queueCloudSave();
+  const engineEnabled = state.engine.enabled;
+  newGame();
+  if (engineEnabled) {
+    setEngineStatus('Log cleared. Board reset for bot game.', 'ok');
+  } else {
+    setEngineStatus('Log cleared. Board reset to initial position.', 'ok');
+  }
 }
 
 function newGame(options = {}) {
@@ -1869,16 +2061,33 @@ function undoMove() {
   cancelEngineSearch('Undo move');
   resetAnalysisState(false);
 
-  const prev = state.history.pop();
+  if (!state.history.length) return;
+
+  let steps = 1;
+  if (
+    state.engine.enabled &&
+    state.history.length >= 2 &&
+    state.position.turn === engineHumanColor()
+  ) {
+    steps = 2;
+  }
+
+  let prev = null;
+  for (let index = 0; index < steps; index += 1) {
+    const snapshotState = state.history.pop();
+    if (!snapshotState) break;
+    prev = snapshotState;
+  }
+
   if (!prev) return;
 
   restoreSnapshot(prev);
   queueCloudSave();
   queueAutoAnalysis();
 
-  maybeRequestComputerMove().catch(error => {
-    setEngineStatus('Engine move failed: ' + error.message, 'error');
-  });
+  if (state.engine.enabled && state.position.turn === state.engine.side) {
+    setEngineStatus('Undo reached an engine turn. Start a new match or play as the other side.', 'warn');
+  }
 }
 
 async function onGroundMove(orig, dest) {
