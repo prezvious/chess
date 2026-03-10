@@ -85,6 +85,8 @@ const engineStatusEl = document.getElementById('engine-status');
 const startStockfishBtnEl = document.getElementById('btn-start-stockfish');
 const analysisSummaryEl = document.getElementById('analysis-summary');
 const analysisListEl = document.getElementById('analysis-list');
+const analysisPrevBtnEl = document.getElementById('btn-analysis-prev');
+const analysisNextBtnEl = document.getElementById('btn-analysis-next');
 const arenaCleanerEl = document.getElementById('arena-cleaner');
 const arenaCleanerBarEl = document.getElementById('arena-cleaner-bar');
 const arenaCleanerTextEl = document.getElementById('arena-cleaner-text');
@@ -133,6 +135,7 @@ const state = {
   capturedByWhite: [],
   capturedByBlack: [],
   history: [],
+  reviewPly: null,
   pieceStyle: '2d',
   boardStyle: 'brown',
   soundEnabled: true,
@@ -553,6 +556,71 @@ function isMatchFinished() {
   return code === 'checkmate' || code === 'stalemate' || code === 'draw';
 }
 
+function canNavigateMoveHistory() {
+  return isMatchFinished() && state.moves.length > 0;
+}
+
+function getDisplayPly() {
+  if (!canNavigateMoveHistory()) return state.moves.length;
+  if (state.reviewPly == null) return state.moves.length;
+  return clamp(state.reviewPly, 0, state.moves.length);
+}
+
+function viewFenForPly(ply) {
+  if (ply <= 0) return INITIAL_FEN;
+  const move = state.moves[ply - 1];
+  return move?.fen || currentFen();
+}
+
+function getBoardView() {
+  const displayPly = getDisplayPly();
+  const reviewing = canNavigateMoveHistory() && displayPly < state.moves.length;
+  if (!reviewing) {
+    return {
+      fen: currentFen(),
+      position: state.position,
+      lastMoveUci: state.lastMoveUci,
+      ply: state.moves.length,
+      reviewing: false,
+    };
+  }
+
+  const fenText = viewFenForPly(displayPly);
+  const fallback = state.position;
+  let position = fallback;
+  try {
+    position = createPositionFromFen(fenText);
+  } catch {
+    position = fallback;
+  }
+
+  return {
+    fen: fenText,
+    position,
+    lastMoveUci: displayPly > 0 ? state.moves[displayPly - 1]?.uci || null : null,
+    ply: displayPly,
+    reviewing: true,
+  };
+}
+
+function clearReviewPly() {
+  state.reviewPly = null;
+}
+
+function setReviewPly(nextPly) {
+  if (!canNavigateMoveHistory()) return false;
+  const clampedPly = clamp(Number(nextPly) || 0, 0, state.moves.length);
+  state.reviewPly = clampedPly >= state.moves.length ? null : clampedPly;
+  refreshUi();
+  return true;
+}
+
+function stepReviewPly(delta) {
+  if (!canNavigateMoveHistory()) return false;
+  const nextPly = clamp(getDisplayPly() + delta, 0, state.moves.length);
+  return setReviewPly(nextPly);
+}
+
 function boardHasPriorGame() {
   if (!state.position) return false;
   return state.moves.length > 0 || currentFen() !== INITIAL_FEN;
@@ -644,10 +712,19 @@ async function startStockfishMatch() {
 }
 
 function renderStatus() {
-  const info = gameStatus();
   statusCard.className = 'status-card';
+  const boardView = getBoardView();
+  turnDot.className = `turn-dot ${boardView.position.turn}`;
+
+  if (boardView.reviewing) {
+    statusText.textContent =
+      'Reviewing move ' + boardView.ply + '/' + state.moves.length + '. ' +
+      capitalize(boardView.position.turn) + ' to move.';
+    return;
+  }
+
+  const info = gameStatus();
   statusText.textContent = info.text;
-  turnDot.className = `turn-dot ${state.position.turn}`;
 
   if (info.code === 'check') statusCard.classList.add('is-check');
   if (info.code === 'checkmate') statusCard.classList.add('is-checkmate');
@@ -885,6 +962,18 @@ function summarizeAnalysis(entries) {
 function renderAnalysis() {
   if (!analysisSummaryEl || !analysisListEl) return;
 
+  const canNavigate = canNavigateMoveHistory();
+  if (!canNavigate) clearReviewPly();
+  const currentPly = getDisplayPly();
+
+  if (analysisPrevBtnEl) {
+    analysisPrevBtnEl.disabled = !canNavigate || currentPly <= 0;
+  }
+
+  if (analysisNextBtnEl) {
+    analysisNextBtnEl.disabled = !canNavigate || currentPly >= state.moves.length;
+  }
+
   if (!isMatchFinished()) {
     analysisSummaryEl.textContent = 'Analysis unlocks after checkmate or draw.';
     analysisListEl.innerHTML = '';
@@ -915,6 +1004,10 @@ function renderAnalysis() {
       ', Blunder ' + summary.counts.blunder;
   }
 
+  if (canNavigate) {
+    analysisSummaryEl.textContent += ' | Viewing ' + currentPly + '/' + state.moves.length;
+  }
+
   analysisListEl.innerHTML = '';
 
   if (!state.analysis.entries.length) {
@@ -934,11 +1027,19 @@ function renderAnalysis() {
     const head = document.createElement('div');
     head.className = 'analysis-item-head';
 
-    const left = document.createElement('strong');
+    const left = document.createElement('button');
+    left.type = 'button';
+    left.className = 'analysis-move-btn';
     const turnLabel = entry.color === 'white'
       ? Math.ceil(entry.ply / 2) + '.'
       : Math.ceil(entry.ply / 2) + '...';
     left.textContent = turnLabel + ' ' + entry.san;
+    left.setAttribute('aria-label', 'Jump to move ' + left.textContent);
+    left.disabled = !canNavigate;
+    if (entry.ply === currentPly) left.classList.add('active');
+    left.addEventListener('click', () => {
+      setReviewPly(entry.ply);
+    });
 
     const badge = document.createElement('span');
     badge.className = 'analysis-badge ' + entry.grade;
@@ -1004,6 +1105,7 @@ function refreshBoard() {
   if (!state.ground || !state.position) return;
 
   selfHealLocks();
+  const boardView = getBoardView();
 
   if (state.engine.enabled) {
     state.orientation = engineHumanColor();
@@ -1014,14 +1116,14 @@ function refreshBoard() {
   const info = gameStatus();
   const isActive = info.code === 'ongoing' || info.code === 'check';
   const blockedByEngine = state.engine.enabled && (state.position.turn === state.engine.side || state.engine.busy);
-  const canMove = isActive && !state.awaitingPromotion && !blockedByEngine && !state.cleaningArena;
+  const canMove = !boardView.reviewing && isActive && !state.awaitingPromotion && !blockedByEngine && !state.cleaningArena;
 
   state.ground.set({
-    fen: currentFen(),
+    fen: boardView.fen,
     orientation: state.orientation,
-    turnColor: state.position.turn,
-    check: state.position.isCheck(),
-    lastMove: state.lastMoveUci ? uciToMove(state.lastMoveUci) : undefined,
+    turnColor: boardView.position.turn,
+    check: boardView.position.isCheck(),
+    lastMove: boardView.lastMoveUci ? uciToMove(boardView.lastMoveUci) : undefined,
     addPieceZIndex: state.pieceStyle === '3d',
     movable: {
       color: canMove ? state.position.turn : undefined,
@@ -1981,10 +2083,12 @@ function restoreSnapshot(data) {
   state.lastMoveUci = data.lastMoveUci || null;
   state.orientation = data.orientation || state.orientation;
   state.engine.resultHandled = false;
+  clearReviewPly();
   refreshUi();
 }
 
 function applyLegalMove(move, source = 'human') {
+  clearReviewPly();
   state.history.push(snapshot());
 
   const capture = detectCapture(state.position, move);
@@ -2046,6 +2150,7 @@ function newGame(options = {}) {
   state.history = [];
   state.lastMoveUci = null;
   state.engine.resultHandled = false;
+  clearReviewPly();
 
   refreshUi();
   queueCloudSave();
@@ -2251,6 +2356,7 @@ function applyCloudRow(row, fromRemote = false) {
     state.lastMoveUci = row.last_move_uci || null;
     state.history = [];
     state.engine.resultHandled = false;
+    clearReviewPly();
     refreshUi();
 
     if (fromRemote) {
@@ -2472,6 +2578,18 @@ function wireUi() {
   const clearHistoryBtn = document.getElementById('btn-clear-history');
   if (clearHistoryBtn) clearHistoryBtn.addEventListener('click', clearGameLog);
 
+  if (analysisPrevBtnEl) {
+    analysisPrevBtnEl.addEventListener('click', () => {
+      stepReviewPly(-1);
+    });
+  }
+
+  if (analysisNextBtnEl) {
+    analysisNextBtnEl.addEventListener('click', () => {
+      stepReviewPly(1);
+    });
+  }
+
   if (startStockfishBtnEl) {
     startStockfishBtnEl.addEventListener('click', () => {
       startStockfishMatch()
@@ -2509,6 +2627,32 @@ function wireUi() {
 
     if (event.key === 'Tab') {
       trapBotModalTab(event);
+    }
+  });
+
+  window.addEventListener('keydown', event => {
+    if (isBotModalOpen() || state.awaitingPromotion) return;
+
+    const target = event.target;
+    if (target instanceof HTMLElement) {
+      const tag = target.tagName;
+      if (
+        target.isContentEditable ||
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT'
+      ) {
+        return;
+      }
+    }
+
+    if (event.key === 'ArrowLeft') {
+      if (stepReviewPly(-1)) event.preventDefault();
+      return;
+    }
+
+    if (event.key === 'ArrowRight') {
+      if (stepReviewPly(1)) event.preventDefault();
     }
   });
 
